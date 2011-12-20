@@ -270,6 +270,14 @@ typedef void           (ALC_APIENTRY *LPALCCAPTURESAMPLES)( ALCdevice *device, A
  #pragma export off
 #endif
 
+#if defined(ANDROID)
+/*
+ * OpenAL extension for suspend/resume of audio throughout application lifecycle
+ */
+ALC_API void            ALC_APIENTRY alcSuspend( void );
+ALC_API void            ALC_APIENTRY alcResume( void );
+#endif
+
 #if defined(__cplusplus)
 }
 #endif

@@ -4,6 +4,8 @@
 /* Define to the library version */
 #define ALSOFT_VERSION "1.12.854"
 
+#define AL_BUILD_LIBRARY
+
 /* Define if we have the Android backend */
 #if defined(ANDROID)
 #if defined(POST_FROYO)
