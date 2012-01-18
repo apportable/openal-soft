@@ -142,9 +142,6 @@ typedef int64_t ALdfp;
 typedef float ALfp;
 typedef double ALdfp;
 
-#define ONE (1)
-#define TWO (2)
-
 #define float2ALfp(x) (x)
 #define ALfp2float(x) (x)
 
