@@ -3,7 +3,7 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 OPENAL_DIR := OpenAL
-
+TARGET_ARCH_ABI?=armeabi-v7a
 LOCAL_LDLIBS    := -llog
 LOCAL_MODULE    := openal
 LOCAL_ARM_MODE  := arm
@@ -21,24 +21,12 @@ LOCAL_CFLAGS    +=  -I$(OPENAL_DIR) \
                     -DHAVE_GCC_VISIBILITY \
 					-g \
 
-					# -fpic \
-					# 				    -ffunction-sections \
-					# 				    -funwind-tables \
-					# 				    -fstack-protector \
-					# 				    -fno-short-enums \
-					# 				    -D__ARM_ARCH_5__ \
-					# 				    -D__ANDROID__  \
-					# 				    -march=armv5 \
-					# 				    -msoft-float \
-
-
-#    -DVERDE_USE_REAL_FILE_IO \
-
-# FIXME
-#LOCAL_CFLAGS    +=  -I/Developer/AndroidNDK/platforms/android-8/arch-arm/usr/include
 
 # Default to Fixed-point math
-LOCAL_CFLAGS    +=  -DOPENAL_FIXED_POINT -DOPENAL_FIXED_POINT_SHIFT=16
+ifeq ($(TARGET_ARCH_ABI),armeabi)
+  # ARMv5, used fixed point math
+  LOCAL_CFLAGS += -marm -DOPENAL_FIXED_POINT -DOPENAL_FIXED_POINT_SHIFT=16
+endif
 
 LOCAL_SRC_FILES :=  \
                     $(OPENAL_DIR)/Alc/android.c              \
