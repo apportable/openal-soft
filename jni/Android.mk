@@ -21,6 +21,7 @@ LOCAL_CFLAGS    +=  -I$(OPENAL_DIR) \
                     -DHAVE_GCC_VISIBILITY \
 					-g \
 
+LOCAL_LDLIBS    += -Wl,--build-id
 
 # Default to Fixed-point math
 ifeq ($(TARGET_ARCH_ABI),armeabi)
