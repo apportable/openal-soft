@@ -69,11 +69,11 @@ static BackendInfo BackendList[] = {
 #ifdef HAVE_PORTAUDIO
     { "port", alc_pa_init, alc_pa_deinit, alc_pa_probe, EmptyFuncs },
 #endif
-#ifdef HAVE_AUDIOTRACK
-    { "audiotrack", alc_audiotrack_init, alc_audiotrack_deinit, alc_audiotrack_probe, EmptyFuncs },
-#endif
 #ifdef HAVE_OPENSLES
     { "opensles", alc_opensles_init, alc_opensles_deinit, alc_opensles_probe, EmptyFuncs },
+#endif
+#if defined(HAVE_AUDIOTRACK)
+    { "audiotrack", alc_audiotrack_init, alc_audiotrack_deinit, alc_audiotrack_probe, EmptyFuncs },
 #endif
 
     { "null", alc_null_init, alc_null_deinit, alc_null_probe, EmptyFuncs },
@@ -2196,6 +2196,13 @@ ALC_API ALCdevice* ALC_APIENTRY alcOpenDevice(const ALCchar *deviceName)
     SuspendContext(NULL);
     for(i = 0;BackendList[i].Init;i++)
     {
+
+        if (BackendList[i].Funcs.OpenPlayback == NULL) {
+            BackendList[i].Probe(DEVICE_PROBE);
+            if (BackendList[i].Funcs.OpenPlayback == NULL) {
+                continue;
+            }
+        }
         device->Funcs = &BackendList[i].Funcs;
         if(ALCdevice_OpenPlayback(device, deviceName))
         {

@@ -5,8 +5,9 @@
 
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 	BackendFuncs func_list;
-	alc_audiotrack_init(&func_list);
-	apportableOpenALFuncs.alc_android_set_java_vm(vm);
+	if (apportableOpenALFuncs.alc_android_set_java_vm) {
+		apportableOpenALFuncs.alc_android_set_java_vm(vm);
+	}
 	return JNI_VERSION_1_4;
 }
 

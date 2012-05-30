@@ -93,8 +93,11 @@ LOCAL_SRC_FILES :=  \
 OBJECTS:=$(LOCAL_SRC_FILES)
 
 # If building for versions after FROYO
-#LOCAL_CFLAGS    += -DPOST_FROYO
-#LOCAL_SRC_FILES += $(OPENAL_DIR)/Alc/opensles.o
+ifeq ($(POST_FROYO), yes)
+  LOCAL_CFLAGS +=   -DPOST_FROYO -I$(ANDROID_NDK_ROOT)/platforms/android-9/arch-arm/usr/include/
+  LOCAL_LDLIBS += -ldl -L$(ANDROID_NDK_ROOT)/platforms/android-9/arch-arm/usr/lib/
+  LOCAL_SRC_FILES += Alc/opensles.o
+endif
 
 ifeq ($(TARGET_ARCH_ABI),x86)
   CC= /Developer/DestinyCloudFist/clang-$(CLANG_VERSION)/bin/clang --sysroot=$(ANDROID_NDK_ROOT)/platforms/android-8/arch-x86 $(CXX_SYSTEM) -ccc-host-triple i686-android-linux -march=i386 -D__compiler_offsetof=__builtin_offsetof
