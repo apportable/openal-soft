@@ -295,9 +295,12 @@ static void alc_audiotrack_set_java_vm(JavaVM *vm)
 void alc_audiotrack_init(BackendFuncs *func_list)
 {
     *func_list = android_funcs;
-    apportableOpenALFuncs.alc_android_suspend = alc_audiotrack_suspend;
-    apportableOpenALFuncs.alc_android_resume = alc_audiotrack_resume;
-    apportableOpenALFuncs.alc_android_set_java_vm = alc_audiotrack_set_java_vm;
+
+    if (apportableOpenALFuncs.alc_android_suspend == NULL) {
+        apportableOpenALFuncs.alc_android_suspend = alc_audiotrack_suspend;
+        apportableOpenALFuncs.alc_android_resume = alc_audiotrack_resume;
+        apportableOpenALFuncs.alc_android_set_java_vm = alc_audiotrack_set_java_vm;
+    }
 }
 
 void alc_audiotrack_deinit(void)

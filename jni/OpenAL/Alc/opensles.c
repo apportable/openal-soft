@@ -20,18 +20,23 @@
 
 #include <stdlib.h>
 #include <time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <dlfcn.h>
+
 #include "alMain.h"
 #include "AL/al.h"
 #include "AL/alc.h"
 
-#include "verde/verde_helpers.h"
 
 #define LOG_NDEBUG 0
-#define LOG_TAG "OpenAL"
+#define LOG_TAG "OpenAL:opensles"
 
 // for __android_log_print(ANDROID_LOG_INFO, "YourApp", "formatted message");
 #if 1
-#define LOGV(...) VERDE_DEBUG(__VA_ARGS__)
+#define LOGV(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #endif
 
 // for native audio
@@ -39,6 +44,14 @@
 #include <SLES/OpenSLES_Android.h>
 
 #include "apportable_openal_funcs.h"
+
+
+#define MAKE_SYM_POINTER(sym) static typeof(sym) * p##sym = NULL
+MAKE_SYM_POINTER(SL_IID_ENGINE);
+MAKE_SYM_POINTER(SL_IID_ANDROIDSIMPLEBUFFERQUEUE);
+MAKE_SYM_POINTER(SL_IID_PLAY);
+MAKE_SYM_POINTER(SL_IID_BUFFERQUEUE);
+MAKE_SYM_POINTER(slCreateEngine);
 
 // engine interfaces
 static SLObjectItf engineObject = NULL;
@@ -60,55 +73,24 @@ static void opensles_callback(SLAndroidSimpleBufferQueueItf bq, void *context)
     static char buffer0[bufferSize], buffer1[bufferSize];
     static char * const buffers[2] = {buffer0, buffer1};
     static unsigned bufferIndex = 0;
-#if 0
-    static unsigned nextCount = ~0;
-    static char nextBuffer[1024] = "Hello, world!";
-    static unsigned nextSize = 1024;
-#endif
 
     assert(bq == bqPlayerBufferQueue);
     assert(NULL != context);
     ALCdevice *pDevice = (ALCdevice *) context;
     ALint frameSize = FrameSizeFromDevFmt(pDevice->FmtChans, pDevice->FmtType);
     void *buffer = buffers[bufferIndex];
-    // LOGV("bq=%p, pDevice=%p, frameSize=%u, buffer=%p, bufferIndex=%u, bufferSize=%u", bq, pDevice, frameSize, buffer, bufferIndex, bufferSize);
     bufferIndex ^= 1;
-    // LOGV("aluMixData");
-    
     aluMixData(pDevice, buffer, bufferSize/frameSize);
     
-    // LOGV("Enqueue2");
-#if 0
-    // for streaming playback, replace this test by logic to find and fill the next buffer
-    if (--nextCount > 0 && NULL != nextBuffer && 0 != nextSize) {
-        SLresult result;
-        // enqueue another buffer
-        result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, nextBuffer, nextSize);
-        // the most likely other result is SL_RESULT_BUFFER_INSUFFICIENT,
-        // which for this code example would indicate a programming error
-        assert(SL_RESULT_SUCCESS == result);
-    }
-#else
     SLresult result;
     result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buffer, bufferSize);
     assert(SL_RESULT_SUCCESS == result);
-#endif
 }
 
 
 static const ALCchar opensles_device[] = "OpenSL ES";
 
 // Apportable extensions
-SLEngineItf alc_opensles_get_native_audio_engine_engine()
-{
-    return engineEngine;
-}
-
-SLEngineItf alc_opensles_get_native_audio_output_mix()
-{
-    return outputMixObject;
-}
-
 SLresult alc_opensles_create_native_audio_engine()
 {
     if (engineObject)
@@ -117,7 +99,7 @@ SLresult alc_opensles_create_native_audio_engine()
     SLresult result;
 
     // create engine
-    result = slCreateEngine(&engineObject, 0, NULL, 0, NULL, NULL);
+    result = pslCreateEngine(&engineObject, 0, NULL, 0, NULL, NULL);
     assert(SL_RESULT_SUCCESS == result);
 
     // realize the engine
@@ -125,7 +107,7 @@ SLresult alc_opensles_create_native_audio_engine()
     assert(SL_RESULT_SUCCESS == result);
 
     // get the engine interface, which is needed in order to create other objects
-    result = (*engineObject)->GetInterface(engineObject, SL_IID_ENGINE, &engineEngine);
+    result = (*engineObject)->GetInterface(engineObject, *pSL_IID_ENGINE, &engineEngine);
     assert(SL_RESULT_SUCCESS == result);
 
     // create output mix
@@ -144,6 +126,12 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
 {
     LOGV("opensles_open_playback pDevice=%p, deviceName=%s", pDevice, deviceName);
 
+    if (pslCreateEngine == NULL) {
+        alc_opensles_probe(DEVICE_PROBE);
+        if (pslCreateEngine == NULL) {
+            return ALC_FALSE;
+        }
+    }
     // create the engine and output mix objects
     SLresult result = alc_opensles_create_native_audio_engine();
 
@@ -162,7 +150,7 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
 
     // create audio player
     LOGV("create audio player");
-    const SLInterfaceID ids[1] = {SL_IID_ANDROIDSIMPLEBUFFERQUEUE};
+    const SLInterfaceID ids[1] = {*pSL_IID_ANDROIDSIMPLEBUFFERQUEUE};
     const SLboolean req[1] = {SL_BOOLEAN_TRUE};
     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk,
         1, ids, req);
@@ -173,11 +161,11 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
     assert(SL_RESULT_SUCCESS == result);
 
     // get the play interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_PLAY, &bqPlayerPlay);
+    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_PLAY, &bqPlayerPlay);
     assert(SL_RESULT_SUCCESS == result);
 
     // get the buffer queue interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_BUFFERQUEUE,
+    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_BUFFERQUEUE,
             &bqPlayerBufferQueue);
     assert(SL_RESULT_SUCCESS == result);
 
@@ -236,62 +224,6 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     unsigned size = samples * channels * bits / 8;
     LOGV("bits=%u, channels=%u, samples=%u, size=%u, freq=%u", bits, channels, samples, size, pDevice->Frequency);
     SetDefaultWFXChannelOrder(pDevice);
-
-#if 0
-    if (pSDL_WasInit(SDL_INIT_AUDIO))
-    {
-        pSDL_PauseAudio(1);
-        pSDL_CloseAudio();
-        pSDL_QuitSubSystem(SDL_INIT_AUDIO);
-    }
-
-    switch (aluBytesFromFormat(device->Format))
-    {
-        case 1:
-            desired.format = AUDIO_U8;
-            break;
-        case 4:
-            switch (ChannelsFromDevFormat(device->DevFmt))
-            {
-                case 1: device->Format = AL_FORMAT_MONO16; break;
-                case 2: device->Format = AL_FORMAT_STEREO16; break;
-                case 4: device->Format = AL_FORMAT_QUAD16; break;
-                case 6: device->Format = AL_FORMAT_51CHN16; break;
-                case 7: device->Format = AL_FORMAT_61CHN16; break;
-                case 8: device->Format = AL_FORMAT_71CHN16; break;
-            }
-            /* fall-through */
-        case 2:
-            desired.format = AUDIO_S16;
-            break;
-        default:
-            AL_PRINT("Unknown format: 0x%x\n", device->Format);
-            return ALC_FALSE;
-    }
-
-	desired.freq = device->Frequency;
-	desired.channels = aluChannelsFromFormat(device->Format);
-	desired.samples = device->UpdateSize * desired.channels;
-	desired.callback = opensles_callback;
-	desired.userdata = device;
-
-    device->NumUpdates = 2;
-
-    if (pSDL_InitSubSystem(SDL_INIT_AUDIO) == -1)
-    {
-        AL_PRINT("SDL_InitSubSystem(SDL_INIT_AUDIO) failed: %s\n", pSDL_GetError());
-        return ALC_FALSE;
-    }
-
-    if (pSDL_OpenAudio(&desired, NULL) == -1)
-    {
-        AL_PRINT("SDL_OpenAudio failed: %s\n", pSDL_GetError());
-        pSDL_QuitSubSystem(SDL_INIT_AUDIO);
-        return ALC_FALSE;
-    }
-
-    pSDL_PauseAudio(0);
-#endif
 
     return ALC_TRUE;
 }
@@ -354,38 +286,39 @@ BackendFuncs opensles_funcs = {
 
 void alc_opensles_suspend()
 {
-  SLresult result;
+    SLresult result;
 
-  if (bqPlayerPlay) {
-    result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PAUSED);
-    assert(SL_RESULT_SUCCESS == result);
-    result = (*bqPlayerBufferQueue)->Clear(bqPlayerBufferQueue);
-    assert(SL_RESULT_SUCCESS == result);
-  }
+    if (bqPlayerPlay) {
+        result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PAUSED);
+        assert(SL_RESULT_SUCCESS == result);
+        result = (*bqPlayerBufferQueue)->Clear(bqPlayerBufferQueue);
+        assert(SL_RESULT_SUCCESS == result);
+    }
 }
 
 void alc_opensles_resume()
 {
-  SLresult result;
+    SLresult result;
 
-  if (bqPlayerPlay) {
-    result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
-    assert(SL_RESULT_SUCCESS == result);
-    // Pump some blank data into the buffer to stimulate the callback
-    result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, "\0", 1);
-    assert(SL_RESULT_SUCCESS == result);
-  }
+    if (bqPlayerPlay) {
+        result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+        assert(SL_RESULT_SUCCESS == result);
+        // Pump some blank data into the buffer to stimulate the callback
+        result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, "\0", 1);
+        assert(SL_RESULT_SUCCESS == result);
+    }
 }
 
 void alc_opensles_init(BackendFuncs *func_list)
 {
     LOGV("alc_opensles_init");
+
+    struct stat statinfo;
+    if (stat("/system/lib/libOpenSLES.so", &statinfo) != 0) {
+        return;
+    }
+
     *func_list = opensles_funcs;
-    apportableOpenALFuncs.alc_android_suspend = alc_opensles_suspend;
-    apportableOpenALFuncs.alc_android_resume = alc_opensles_resume;
-    apportableOpenALFuncs.alc_opensles_get_native_audio_engine_engine = alc_opensles_get_native_audio_engine_engine;
-    apportableOpenALFuncs.alc_opensles_get_native_audio_output_mix = alc_opensles_get_native_audio_output_mix;
-    apportableOpenALFuncs.alc_opensles_create_native_audio_engine = alc_opensles_create_native_audio_engine;
 }
 
 void alc_opensles_deinit(void)
@@ -395,6 +328,39 @@ void alc_opensles_deinit(void)
 
 void alc_opensles_probe(int type)
 {
+    char *error;
+    struct stat statinfo;
+    if (stat("/system/lib/libOpenSLES.so", &statinfo) != 0) {
+        LOGV("alc_opensles_probe OpenSLES support not found.");
+        return;
+    }
+
+    dlerror(); // Clear dl errors
+    void *dlHandle = dlopen("/system/lib/libOpenSLES.so", RTLD_NOW | RTLD_GLOBAL);
+    if (!dlHandle || (error = (typeof(error))dlerror()) != NULL) {
+        LOGV("OpenSLES could not be loaded.");
+        return;
+    }
+
+#define LOAD_SYM_POINTER(sym) \
+    do { \
+        p##sym = dlsym(dlHandle, #sym); \
+        if((error=(typeof(error))dlerror()) != NULL) { \
+            LOGV("alc_opensles_probe could not load %s, error: %s", #sym, error); \
+            dlclose(dlHandle); \
+            return; \
+        } \
+    } while(0)
+
+    LOAD_SYM_POINTER(slCreateEngine);
+    LOAD_SYM_POINTER(SL_IID_ENGINE);
+    LOAD_SYM_POINTER(SL_IID_ANDROIDSIMPLEBUFFERQUEUE);
+    LOAD_SYM_POINTER(SL_IID_PLAY);
+    LOAD_SYM_POINTER(SL_IID_BUFFERQUEUE);
+
+    apportableOpenALFuncs.alc_android_suspend = alc_opensles_suspend;
+    apportableOpenALFuncs.alc_android_resume = alc_opensles_resume;
+
     switch (type) {
     case DEVICE_PROBE:
         LOGV("alc_opensles_probe DEVICE_PROBE");
