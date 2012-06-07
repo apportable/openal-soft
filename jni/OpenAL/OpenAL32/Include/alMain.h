@@ -86,7 +86,7 @@ typedef unsigned long long ALuint64;
 #endif
 
 #ifdef HAVE_GCC_FORMAT
-#define PRINTF_STYLE(x, y) __attribute__((format(printf, (x), (y))))
+#define PRINTF_STYLE(x, y) __attribute__((format(__printf__, (x), (y))))
 #else
 #define PRINTF_STYLE(x, y)
 #endif
