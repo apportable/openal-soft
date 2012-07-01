@@ -130,7 +130,7 @@ else
 $(OBJDIR)/%.o: $(ROOTDIR)/$(MODULE)/%.c
     @echo Analyzing $<
     @mkdir -p `echo $@ | sed s/[^/]*[.]o$$//`
-    @$(CC) $(MODULE_CFLAGS) $(MODULE_CCFLAGS) -S --analyze $< -o /dev/null 2> $(ANALYZE_OUTPUT)
+    @$(CC) $(MODULE_CFLAGS) $(MODULE_CCFLAGS) -S --analyze $< -o /dev/null 2>> $(ANALYZE_OUTPUT)
 
 # End Analyze Rules
 endif
