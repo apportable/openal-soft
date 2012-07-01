@@ -1,5 +1,8 @@
 LOCAL_PATH := $(call my-dir)
 
+ANALYZE      ?= no
+ANALYZE_OUTPUT?=/dev/null
+
 include $(CLEAR_VARS)
 TARGET_ARCH_ABI  ?=armeabi-v7a
 LOCAL_LDLIBS     := -llog
@@ -111,11 +114,26 @@ OBJDIR = $(BINDIR)/$(MODULE_DST)
 
 MODULE_CFLAGS := $(COMMON_CFLAGS) $(CFLAGS) $(LOCAL_CFLAGS)
 
+ifneq ("$(ANALYZE)", "yes")
+# Start Compile Rules
+
 $(OBJDIR)/%.o: $(ROOTDIR)/$(MODULE)/%.c
 	@echo $<
 	@mkdir -p `echo $@ | sed s/[^/]*[.]o$$//`
 	@$(CC) $(MODULE_CFLAGS) $(MODULE_CCFLAGS) -S $< -o $@.s
 	@$(CCAS) $(MODULE_ASFLAGS) $(LOCAL_LDLIBS) -c $@.s -o $@
+
+# End Compile Rules
+else
+# Start Analyze Rules
+
+$(OBJDIR)/%.o: $(ROOTDIR)/$(MODULE)/%.c
+    @echo Analyzing $<
+    @mkdir -p `echo $@ | sed s/[^/]*[.]o$$//`
+    @$(CC) $(MODULE_CFLAGS) $(MODULE_CCFLAGS) -S --analyze $< -o /dev/null 2> $(ANALYZE_OUTPUT)
+
+# End Analyze Rules
+endif
 
 include $(BUILD_SHARED_LIBRARY)
 
