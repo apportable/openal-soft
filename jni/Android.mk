@@ -92,7 +92,7 @@ LOCAL_SRC_FILES :=  \
                     Alc/panning.o              \
                     Alc/mixer.o                \
                     Alc/audiotrack.o           \
-                    
+
 OBJECTS:=$(LOCAL_SRC_FILES)
 
 # If building for versions after FROYO
@@ -114,13 +114,15 @@ OBJDIR = $(BINDIR)/$(MODULE_DST)
 
 MODULE_CFLAGS := $(COMMON_CFLAGS) $(CFLAGS) $(LOCAL_CFLAGS)
 
+DEBUG_LOGGING_FLAGS?=
+
 ifneq ("$(ANALYZE)", "yes")
 # Start Compile Rules
 
 $(OBJDIR)/%.o: $(ROOTDIR)/$(MODULE)/%.c
 	@echo $<
 	@mkdir -p `echo $@ | sed s/[^/]*[.]o$$//`
-	@$(CC) $(MODULE_CFLAGS) $(MODULE_CCFLAGS) -S $< -o $@.s
+	@$(CC) $(MODULE_CFLAGS) $(MODULE_CCFLAGS) $(DEBUG_LOGGING_FLAGS) -S $< -o $@.s
 	@$(CCAS) $(MODULE_ASFLAGS) $(LOCAL_LDLIBS) -c $@.s -o $@
 
 # End Compile Rules
@@ -128,9 +130,9 @@ else
 # Start Analyze Rules
 
 $(OBJDIR)/%.o: $(ROOTDIR)/$(MODULE)/%.c
-    @echo Analyzing $<
-    @mkdir -p `echo $@ | sed s/[^/]*[.]o$$//`
-    @$(CC) $(MODULE_CFLAGS) $(MODULE_CCFLAGS) -S --analyze $< -o /dev/null 2>> $(ANALYZE_OUTPUT)
+	@echo Analyzing $<
+	@mkdir -p `echo $@ | sed s/[^/]*[.]o$$//`
+	@$(CC) $(MODULE_CFLAGS) $(MODULE_CCFLAGS) $(DEBUG_LOGGING_FLAGS) -S --analyze $< -o /dev/null 2>> $(ANALYZE_OUTPUT)
 
 # End Analyze Rules
 endif
