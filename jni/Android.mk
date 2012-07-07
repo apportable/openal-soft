@@ -19,7 +19,7 @@ else
     BINDIR       := $(abspath $(BINDIR) )
 endif
 
-ANDROID_NDK_ROOT=/Developer/DestinyCloudFist/crystax-ndk-r7
+ANDROID_NDK_ROOT=/Developer/DestinyCloudFist/crystax-ndk-r8
 
 LOCAL_CFLAGS    +=  -I$(ROOTDIR)/$(OPENAL_DIR) \
                     -I$(ROOTDIR)/$(OPENAL_DIR)/include \
@@ -138,5 +138,4 @@ $(OBJDIR)/%.o: $(ROOTDIR)/$(MODULE)/%.c
 endif
 
 include $(BUILD_SHARED_LIBRARY)
-
 
