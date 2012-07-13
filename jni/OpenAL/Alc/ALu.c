@@ -1009,13 +1009,21 @@ static __inline ALvoid aluMixDataPrivate(ALCdevice *device, ALvoid *buffer, ALsi
 #endif
 }
 
+static inline long timespecdiff(struct timespec *starttime, struct timespec *finishtime)
+{
+  long usec;
+  usec=(finishtime->tv_sec-starttime->tv_sec)*1000000;
+  usec+=(finishtime->tv_nsec-starttime->tv_nsec)/1000;
+  return usec;
+}
+
 ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
 {
 #ifdef MAX_SOURCES_LOW
     // Profile aluMixDataPrivate to set admission control parameters
-    clock_t ts_start;
-    clock_t ts_end;
-    clock_t ts_diff;
+    static struct timespec ts_start;
+    static struct timespec ts_end;
+    long ts_diff;
     int time_per_source;
     int max_sources_within_deadline;
 	int mix_deadline_usec;
@@ -1029,18 +1037,18 @@ ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
 
 	if (alc_num_cores > 1) {
 		// Allow OpenAL to monopolize one core
-		mix_deadline_usec = ((size*1000000) / device->Frequency) - 2000;
+		mix_deadline_usec = ((size*1000000) / device->Frequency) / 2;
 	} else {
 		// Try to cap mixing at 20% CPU
 		mix_deadline_usec = ((size*1000000) / device->Frequency) / 5;
 	}
 
-    ts_start = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts_start);
 	aluMixDataPrivate(device, buffer,  size);
-    ts_end = clock();
+    clock_gettime(CLOCK_MONOTONIC, &ts_end);
 
     // Time in micro-seconds that aluMixData has taken to run
-    ts_diff = ((ts_end-ts_start)*1000) / (CLOCKS_PER_SEC/1000);
+    ts_diff = timespecdiff(&ts_start, &ts_end);
 
     // Try to adjust the max sources limit adaptively, within a range
     if (alc_active_sources > 0) {
@@ -1050,7 +1058,7 @@ ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
 		if (max > alc_max_sources) {
 			alc_max_sources++;
 		} else if (max < alc_max_sources) {
-			alc_max_sources--;
+			alc_max_sources = max;
 		}
     } else {
     	alc_max_sources = MAX_SOURCES_LOW;

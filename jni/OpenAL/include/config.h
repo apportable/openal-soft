@@ -15,7 +15,7 @@
 #define HAVE_AUDIOTRACK 1
 
 // For throttling AlSource.c
-#define MAX_SOURCES_LOW 8
+#define MAX_SOURCES_LOW 1
 #define MAX_SOURCES_HIGH 64
 #endif
 
