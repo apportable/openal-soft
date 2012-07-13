@@ -19,7 +19,7 @@ else
     BINDIR       := $(abspath $(BINDIR) )
 endif
 
-ANDROID_NDK_ROOT=/Developer/DestinyCloudFist/crystax-ndk-r7
+ANDROID_NDK_ROOT=/Developer/DestinyCloudFist/android-ndk-r8
 
 LOCAL_CFLAGS    +=  -I$(ROOTDIR)/$(OPENAL_DIR) \
                     -I$(ROOTDIR)/$(OPENAL_DIR)/include \
@@ -114,7 +114,7 @@ OBJDIR = $(BINDIR)/$(MODULE_DST)
 
 MODULE_CFLAGS := $(COMMON_CFLAGS) $(CFLAGS) $(LOCAL_CFLAGS)
 
-DEBUG_LOGGING_FLAGS ?= -DDEBUG_LOG\(...\)=do\{\}while\(0\)\; -DDEBUG_BREAK\(\)=do\{\}while\(0\)\;
+DEBUG_LOGGING_FLAGS ?= -DDEBUG_LOG\(...\)=do\{\}while\(0\)\; -DDEBUG_BREAK\(\)=do\{\}while\(0\)\; -DRELEASE_LOG\(...\)=do\{\}while\(0\);
 
 ifneq ("$(ANALYZE)", "yes")
 # Start Compile Rules
