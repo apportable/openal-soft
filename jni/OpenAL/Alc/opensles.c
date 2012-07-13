@@ -30,13 +30,17 @@
 #include "AL/al.h"
 #include "AL/alc.h"
 
+#include <pthread.h>
+#include <sched.h>
+#include <sys/prctl.h>
 
 #define LOG_NDEBUG 0
-#define LOG_TAG "OpenAL:opensles"
+#define LOG_TAG "OpenAL_SLES"
 
-// for __android_log_print(ANDROID_LOG_INFO, "YourApp", "formatted message");
 #if 1
 #define LOGV(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#else
+#define LOGV(...)
 #endif
 
 // for native audio
@@ -44,7 +48,6 @@
 #include <SLES/OpenSLES_Android.h>
 
 #include "apportable_openal_funcs.h"
-
 
 #define MAKE_SYM_POINTER(sym) static typeof(sym) * p##sym = NULL
 MAKE_SYM_POINTER(SL_IID_ENGINE);
@@ -63,28 +66,195 @@ static SLObjectItf outputMixObject = NULL;
 // buffer queue player interfaces
 static SLObjectItf bqPlayerObject = NULL;
 static SLPlayItf bqPlayerPlay;
+static ALCdevice *openSLESDevice = NULL;
 static SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue;
+
+
+static long timespecdiff(struct timespec *starttime, struct timespec *finishtime)
+{
+  long msec;
+  msec=(finishtime->tv_sec-starttime->tv_sec)*1000;
+  msec+=(finishtime->tv_nsec-starttime->tv_nsec)/1000000;
+  return msec;
+ }
+
+// thread to mix and enqueue data
+#define bufferSize (1024*4)
+#define bufferCount 8
+
+typedef enum {
+    OUTPUT_BUFFER_STATE_UNKNOWN,
+    OUTPUT_BUFFER_STATE_FREE,
+    OUTPUT_BUFFER_STATE_MIXED,
+    OUTPUT_BUFFER_STATE_ENQUEUED,
+} outputBuffer_state_t;
+
+typedef struct outputBuffer_s {
+    pthread_mutex_t mutex;
+    pthread_cond_t  cond;
+    outputBuffer_state_t state;
+    char buffer[bufferSize];
+} outputBuffer_t;
+
+static outputBuffer_t outputBuffers[bufferCount];
+
+
+typedef struct {
+    pthread_t playbackThread;
+    char threadShouldRun;
+    char lastBufferEnqueued;
+    char lastBufferMixed;
+
+} opesles_data_t;
+
+static void *playback_function(void * context) {
+    LOGV("playback_function started");
+    outputBuffer_t *buffer = NULL;
+    SLresult result;
+    struct timespec ts;
+    int rc;
+    assert(NULL != context);
+    ALCdevice *pDevice = (ALCdevice *) context;
+    opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
+    unsigned int bufferIndex = devState->lastBufferMixed;
+
+    ALint frameSize = FrameSizeFromDevFmt(pDevice->FmtChans, pDevice->FmtType);
+
+    // Show a sensible name for the thread in debug tools
+    prctl(PR_SET_NAME, (unsigned long)"OpenAL/sl/m", 0, 0, 0);
+
+    while (1) {
+        if (devState->threadShouldRun == 0) {
+            return NULL;
+        }
+
+        bufferIndex = (++bufferIndex) % bufferCount;
+        buffer = &(outputBuffers[bufferIndex]);
+
+        pthread_mutex_lock(&(buffer->mutex));
+
+
+        while (1) {
+            if (devState->threadShouldRun == 0) {
+                pthread_mutex_unlock(&(buffer->mutex));
+                return NULL;
+            }
+            if (buffer->state == OUTPUT_BUFFER_STATE_FREE)
+                break;
+
+            // This is a little hacky, but here we avoid using a buffer too soon after it is enqueued
+            if (buffer->state == OUTPUT_BUFFER_STATE_ENQUEUED) {
+                outputBuffer_t *buffer1 = &(outputBuffers[(bufferIndex + 1) % bufferCount]);
+                outputBuffer_t *buffer2 = &(outputBuffers[(bufferIndex + 2) % bufferCount]);
+                outputBuffer_t *buffer3 = &(outputBuffers[(bufferIndex + 3) % bufferCount]);
+                if (buffer1->state == OUTPUT_BUFFER_STATE_ENQUEUED &&
+                    buffer2->state == OUTPUT_BUFFER_STATE_ENQUEUED &&
+                    buffer3->state == OUTPUT_BUFFER_STATE_ENQUEUED) {
+                    buffer->state = OUTPUT_BUFFER_STATE_FREE;
+                    break;
+                }
+            } 
+
+            // No buffer available, wait for a buffer to become available
+            // or until playback is stopped/suspended
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_nsec += 5000;
+            rc = pthread_cond_timedwait(&(buffer->cond), &(buffer->mutex), &ts);
+        }
+
+        aluMixData(pDevice, buffer->buffer, bufferSize/frameSize);
+        buffer->state = OUTPUT_BUFFER_STATE_MIXED;
+        pthread_cond_signal(&(buffer->cond));
+        pthread_mutex_unlock(&(buffer->mutex));
+
+        devState->lastBufferMixed = bufferIndex;
+    }
+}
+
+static void start_playback(ALCdevice *pDevice) {
+    opesles_data_t *devState = NULL;
+
+    if (pDevice->ExtraData == NULL) {
+        devState = malloc(sizeof(opesles_data_t));
+        bzero(devState, sizeof(opesles_data_t));
+        pDevice->ExtraData = devState;
+
+        devState->threadShouldRun = 1;
+        devState->lastBufferEnqueued = -1;
+        devState->lastBufferMixed = -1;
+
+        for (int i = 0; i < bufferCount; i++) {
+            bzero(&outputBuffers[i], sizeof(outputBuffer_t));
+
+            if (pthread_mutex_init(&(outputBuffers[i].mutex), (pthread_mutexattr_t*) NULL) != 0) {
+                LOGV("Error on init of mutex");
+            }
+            if (pthread_cond_init(&(outputBuffers[i].cond), (pthread_condattr_t*) NULL) != 0) {
+                LOGV("Error on init of cond");
+            }
+            outputBuffers[i].state = OUTPUT_BUFFER_STATE_FREE;
+        }
+
+        // For the suspend/resume functionaly, we only support one device for now
+        openSLESDevice = pDevice;
+    } else {
+        devState = (opesles_data_t *) pDevice->ExtraData;
+    }
+
+    // start/restart playback thread
+    devState->threadShouldRun = 1;
+
+    pthread_attr_t playbackThreadAttr;
+    pthread_attr_init(&playbackThreadAttr);
+    struct sched_param playbackThreadParam;
+    playbackThreadParam.sched_priority = sched_get_priority_max(SCHED_RR);
+    pthread_attr_setschedpolicy(&playbackThreadAttr, SCHED_RR);
+    pthread_attr_setschedparam(&playbackThreadAttr, &playbackThreadParam);
+    pthread_create(&(devState->playbackThread), &playbackThreadAttr, playback_function,  (void *) pDevice);
+}
+
+static void stop_playback(ALCdevice *pDevice) {
+    opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
+    devState->threadShouldRun = 0;
+    pthread_join(devState->playbackThread, NULL);
+    return;
+}
 
 // this callback handler is called every time a buffer finishes playing
 static void opensles_callback(SLAndroidSimpleBufferQueueItf bq, void *context)
 {
-    // LOGV("opensles_callback");
-#define bufferSize (1024*4)
-    static char buffer0[bufferSize], buffer1[bufferSize];
-    static char * const buffers[2] = {buffer0, buffer1};
-    static unsigned bufferIndex = 0;
-
-    assert(bq == bqPlayerBufferQueue);
-    assert(NULL != context);
     ALCdevice *pDevice = (ALCdevice *) context;
-    ALint frameSize = FrameSizeFromDevFmt(pDevice->FmtChans, pDevice->FmtType);
-    void *buffer = buffers[bufferIndex];
-    bufferIndex ^= 1;
-    aluMixData(pDevice, buffer, bufferSize/frameSize);
-    
+    opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
+    unsigned int bufferIndex = devState->lastBufferEnqueued;
+    struct timespec ts;
+    int rc;
     SLresult result;
-    result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buffer, bufferSize);
-    assert(SL_RESULT_SUCCESS == result);
+    outputBuffer_t *buffer = NULL;
+
+    bufferIndex = (++bufferIndex) % bufferCount;
+    buffer = &(outputBuffers[bufferIndex]);
+
+    pthread_mutex_lock(&(buffer->mutex));
+    while (buffer->state != OUTPUT_BUFFER_STATE_MIXED) {
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_nsec += 100000;
+        rc = pthread_cond_timedwait(&(buffer->cond), &(buffer->mutex), &ts);
+        if (rc != 0) {
+            // if there is a timeout or some other error, we are probably suspended
+            pthread_mutex_unlock(&(buffer->mutex));
+            return;
+        }
+    }
+
+    result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buffer->buffer, bufferSize);
+    if (SL_RESULT_SUCCESS == result) {
+        buffer->state = OUTPUT_BUFFER_STATE_ENQUEUED;
+        devState->lastBufferEnqueued = bufferIndex;
+        pthread_cond_signal(&(buffer->cond));
+    } else {
+        bufferIndex--;
+    }
+    pthread_mutex_unlock(&(buffer->mutex));
 }
 
 
@@ -173,12 +343,14 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
     result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, opensles_callback, (void *) pDevice);
     assert(SL_RESULT_SUCCESS == result);
 
+    // playback_lock = createThreadLock();
+    start_playback(pDevice);
+
     // set the player's state to playing
     result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
     assert(SL_RESULT_SUCCESS == result);
 
     // enqueue the first buffer to kick off the callbacks
-    LOGV("enqueue");
     result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, "\0", 1);
     assert(SL_RESULT_SUCCESS == result);
 
@@ -294,6 +466,10 @@ void alc_opensles_suspend()
         result = (*bqPlayerBufferQueue)->Clear(bqPlayerBufferQueue);
         assert(SL_RESULT_SUCCESS == result);
     }
+
+    if (openSLESDevice) {
+        stop_playback(openSLESDevice);
+    }
 }
 
 void alc_opensles_resume()
@@ -307,6 +483,10 @@ void alc_opensles_resume()
         result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, "\0", 1);
         assert(SL_RESULT_SUCCESS == result);
     }
+
+    if (openSLESDevice) {
+        start_playback(openSLESDevice);
+    }    
 }
 
 void alc_opensles_init(BackendFuncs *func_list)
