@@ -158,7 +158,7 @@ static void *playback_function(void * context) {
             // No buffer available, wait for a buffer to become available
             // or until playback is stopped/suspended
             clock_gettime(CLOCK_REALTIME, &ts);
-            ts.tv_nsec += 5000;
+            ts.tv_nsec += 5000000;
             rc = pthread_cond_timedwait(&(buffer->cond), &(buffer->mutex), &ts);
         }
 
