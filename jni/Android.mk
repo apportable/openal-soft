@@ -32,6 +32,7 @@ LOCAL_CFLAGS    +=  -I$(ROOTDIR)/$(OPENAL_DIR) \
                     -fstack-protector \
                     -fno-short-enums \
                     -DHAVE_GCC_VISIBILITY \
+                    -O3 \
                     -g \
 
 ifeq ($(TARGET_ARCH_ABI),x86)
@@ -119,11 +120,24 @@ DEBUG_LOGGING_FLAGS ?= -DDEBUG_LOG\(...\)=do\{\}while\(0\)\; -DDEBUG_BREAK\(\)=d
 ifneq ("$(ANALYZE)", "yes")
 # Start Compile Rules
 
-$(OBJDIR)/%.o: $(ROOTDIR)/$(MODULE)/%.c
-	@echo $<
-	@mkdir -p `echo $@ | sed s/[^/]*[.]o$$//`
-	@$(CC) $(MODULE_CFLAGS) $(MODULE_CCFLAGS) $(DEBUG_LOGGING_FLAGS) -S $< -o $@.s
-	@$(CCAS) $(MODULE_ASFLAGS) $(LOCAL_LDLIBS) -c $@.s -o $@
+
+$(OBJDIR)/%.out.s: $(ROOTDIR)/$(MODULE)/%.c
+	@echo Compiling .c $<
+	@mkdir -p $(dir $@)
+	@$(CC)  $(MODULE_CFLAGS) $(MODULE_CCFLAGS) $(DEBUG_LOGGING_FLAGS) -S $< -o $@
+
+$(OBJDIR)/%.fixed.s: $(OBJDIR)/%.out.s
+	@echo fixing $<
+	@perl fixup_assembly.pl < $< > $@
+
+$(OBJDIR)/%.o: $(OBJDIR)/%.fixed.s
+	@echo assembling $<
+	@$(CCAS) $(MODULE_ASFLAGS) -c $< -o $@
+
+$(OBJDIR)/%.o: $(ROOTDIR)/$(MODULE)/%.s
+	@echo Assembling $<
+	@mkdir -p $(dir $@)
+	@$(CC) $(MODULE_ASFLAGS) -c $< -o $@
 
 # End Compile Rules
 else
