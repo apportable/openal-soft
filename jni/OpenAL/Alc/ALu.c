@@ -1061,7 +1061,7 @@ ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
 			alc_max_sources = max;
 		}
     } else {
-    	alc_max_sources = MAX_SOURCES_LOW;
+    	alc_max_sources = MAX_SOURCES_START;
     }
 #else
 	aluMixDataPrivate(device, buffer,  size);
