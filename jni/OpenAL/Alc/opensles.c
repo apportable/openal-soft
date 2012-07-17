@@ -179,7 +179,6 @@ static void start_playback(ALCdevice *pDevice) {
         bzero(devState, sizeof(opesles_data_t));
         pDevice->ExtraData = devState;
 
-        devState->threadShouldRun = 1;
         devState->lastBufferEnqueued = -1;
         devState->lastBufferMixed = -1;
 
@@ -199,6 +198,11 @@ static void start_playback(ALCdevice *pDevice) {
         openSLESDevice = pDevice;
     } else {
         devState = (opesles_data_t *) pDevice->ExtraData;
+    }
+
+    if (devState->threadShouldRun == 1) {
+        // Gratuitous resume
+        return;
     }
 
     // start/restart playback thread
