@@ -244,9 +244,11 @@ static void opensles_callback(SLAndroidSimpleBufferQueueItf bq, void *context)
         ts.tv_nsec += 100000;
         rc = pthread_cond_timedwait(&(buffer->cond), &(buffer->mutex), &ts);
         if (rc != 0) {
-            // if there is a timeout or some other error, we are probably suspended
-            pthread_mutex_unlock(&(buffer->mutex));
-            return;
+            if (devState->threadShouldRun == 0) {
+                // we are probably suspended
+                pthread_mutex_unlock(&(buffer->mutex));
+                return;
+            }
         }
     }
 
