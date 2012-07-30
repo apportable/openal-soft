@@ -391,6 +391,10 @@ static void opensles_close_playback(ALCdevice *pDevice)
         engineEngine = NULL;
     }
 
+    if (openSLESDevice == pDevice)
+    {
+        openSLESDevice = NULL;
+    }
 }
 
 static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
