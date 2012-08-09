@@ -15,9 +15,16 @@
 #define HAVE_AUDIOTRACK 1
 
 // For throttling AlSource.c
+
+#ifndef MAX_SOURCES_LOW
 #define MAX_SOURCES_LOW 4
+#endif
+#ifndef MAX_SOURCES_START
 #define MAX_SOURCES_START 8
+#endif
+#ifndef MAX_SOURCES_HIGH
 #define MAX_SOURCES_HIGH 64
+#endif
 #endif
 
 /* Define if we have the ALSA backend */
