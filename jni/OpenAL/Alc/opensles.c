@@ -414,6 +414,7 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
 static void opensles_stop_playback(ALCdevice *pDevice)
 {
     LOGV("opensles_stop_playback device=%p", pDevice);
+    stop_playback(pDevice);
 }
 
 static ALCboolean opensles_open_capture(ALCdevice *pDevice, const ALCchar *deviceName)
