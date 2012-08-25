@@ -389,7 +389,6 @@ AL_API ALvoid AL_APIENTRY alBufferSubDataSOFT(ALuint buffer,ALenum format,const 
 
     if(Context->SampleSource)
     {
-        ALintptrEXT offset;
 
         if(Context->SampleSource->state == MAPPED)
         {

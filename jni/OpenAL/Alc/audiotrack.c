@@ -64,8 +64,7 @@ static void* thread_function(void* arg)
 {
     ALCdevice* device = (ALCdevice*)arg;
     AndroidData* data = (AndroidData*)device->ExtraData;
-
-    JNIEnv* env;
+    
     (*javaVM)->AttachCurrentThread(javaVM, &env, NULL);
 
     (*env)->PushLocalFrame(env, 2);
