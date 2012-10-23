@@ -19,7 +19,7 @@ else
     BINDIR       := $(abspath $(BINDIR) )
 endif
 
-ANDROID_NDK_ROOT=/Developer/DestinyCloudFist/android-ndk-r8
+ANDROID_NDK_ROOT=/Developer/DestinyCloudFist/android-ndk-r8b
 
 LOCAL_CFLAGS    +=  -I$(ROOTDIR)/$(OPENAL_DIR) \
                     -I$(ROOTDIR)/$(OPENAL_DIR)/include \
@@ -112,8 +112,13 @@ ifeq ($(TARGET_ARCH_ABI),x86)
   CC= /Developer/DestinyCloudFist/clang-$(CLANG_VERSION)/bin/clang --sysroot=$(ANDROID_NDK_ROOT)/platforms/android-8/arch-x86 $(CXX_SYSTEM) -ccc-host-triple i686-android-linux -march=i386 -D__compiler_offsetof=__builtin_offsetof
   CCAS=$(ANDROID_NDK_ROOT)/toolchains/x86-4.4.3/prebuilt/$(HOST_OS)-$(HOST_ARCH)/bin/i686-android-linux-gcc
 else
+ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
+  CC= /Developer/DestinyCloudFist/clang-$(CLANG_VERSION)/bin/clang --sysroot=$(ANDROID_NDK_ROOT)/platforms/android-8/arch-arm $(CXX_SYSTEM) -ccc-host-triple arm-android-eabi-v7a  -march=armv7a -mfloat-abi=softfp -mfpu=vfp -D__compiler_offsetof=__builtin_offsetof
+  CCAS=$(ANDROID_NDK_ROOT)/toolchains/arm-linux-androideabi-4.6/prebuilt/$(HOST_OS)-$(HOST_ARCH)/bin/arm-linux-androideabi-gcc
+else
   CC= /Developer/DestinyCloudFist/clang-$(CLANG_VERSION)/bin/clang --sysroot=$(ANDROID_NDK_ROOT)/platforms/android-8/arch-arm $(CXX_SYSTEM) -ccc-host-triple arm-android-eabi -march=armv5 -D__compiler_offsetof=__builtin_offsetof
   CCAS=$(ANDROID_NDK_ROOT)/toolchains/arm-linux-androideabi-4.4.3/prebuilt/$(HOST_OS)-$(HOST_ARCH)/bin/arm-linux-androideabi-gcc
+endif
 endif
 
 OBJDIR = $(BINDIR)/$(MODULE_DST)
