@@ -173,6 +173,7 @@ static void *playback_function(void * context) {
 
 static void start_playback(ALCdevice *pDevice) {
     opesles_data_t *devState = NULL;
+	int i;
 
     if (pDevice->ExtraData == NULL) {
         devState = malloc(sizeof(opesles_data_t));
@@ -182,7 +183,7 @@ static void start_playback(ALCdevice *pDevice) {
         devState->lastBufferEnqueued = -1;
         devState->lastBufferMixed = -1;
 
-        for (int i = 0; i < bufferCount; i++) {
+        for (i = 0; i < bufferCount; i++) {
             bzero(&outputBuffers[i], sizeof(outputBuffer_t));
 
             if (pthread_mutex_init(&(outputBuffers[i].mutex), (pthread_mutexattr_t*) NULL) != 0) {
