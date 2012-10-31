@@ -94,6 +94,11 @@ typedef float ALfloat;
 typedef double ALdouble;
 
 #ifdef OPENAL_FIXED_POINT
+/* Apportable tries to define int64_t and int32_t if it thinks it is needed.
+ * But this is breaking in a complex project involving both pure C and C++ 
+ * something is triggering redefinition errors. The workaround seems to be just using stdint.h. 
+ */
+#include <stdint.h>
 /** Types and Macros for fixed-point math */
 #ifndef INT64_MAX
 typedef long long int64_t;
