@@ -80,7 +80,7 @@ static long timespecdiff(struct timespec *starttime, struct timespec *finishtime
 
 // thread to mix and enqueue data
 #define bufferSize (1024*4)
-#define bufferCount 8
+#define bufferCount 4
 
 typedef enum {
     OUTPUT_BUFFER_STATE_UNKNOWN,
