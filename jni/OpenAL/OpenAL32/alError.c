@@ -30,7 +30,9 @@ AL_API ALenum AL_APIENTRY alGetError(ALvoid)
     ALenum errorCode;
 
     Context = GetContextSuspended();
-    if(!Context) return AL_INVALID_OPERATION;
+    if(!Context) {
+        return AL_NO_ERROR;
+    }
 
     errorCode = Context->LastError;
     Context->LastError = AL_NO_ERROR;

@@ -356,7 +356,7 @@ static ALCuint     g_ulContextCount = 0;
 // Thread-local current context
 static tls_type LocalContext;
 // Process-wide current context
-static ALCcontext *GlobalContext;
+static ALCcontext *GlobalContext = NULL;
 
 // Context Error
 static ALCenum g_eLastNullDeviceError = ALC_NO_ERROR;
