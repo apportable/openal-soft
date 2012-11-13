@@ -34,6 +34,9 @@
 #include <sched.h>
 #include <sys/prctl.h>
 
+#include <jni.h>
+
+
 #define LOG_NDEBUG 0
 #define LOG_TAG "OpenAL_SLES"
 
@@ -69,6 +72,8 @@ static SLPlayItf bqPlayerPlay;
 static ALCdevice *openSLESDevice = NULL;
 static SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue;
 
+// JNI stuff so we can get the runtime OS version number
+static JavaVM* javaVM = NULL;
 
 static long timespecdiff(struct timespec *starttime, struct timespec *finishtime)
 {
@@ -80,7 +85,8 @@ static long timespecdiff(struct timespec *starttime, struct timespec *finishtime
 
 // thread to mix and enqueue data
 #define bufferSize (1024*4)
-#define bufferCount 4
+// Cannot be a constant because we need to tweak differently depending on OS version.
+size_t bufferCount = 8;
 
 typedef enum {
     OUTPUT_BUFFER_STATE_UNKNOWN,
@@ -96,7 +102,8 @@ typedef struct outputBuffer_s {
     char buffer[bufferSize];
 } outputBuffer_t;
 
-static outputBuffer_t outputBuffers[bufferCount];
+// Will dynamically create the number of buffers (array elements) based on OS version.
+static outputBuffer_t* outputBuffers = NULL;
 
 
 typedef struct {
@@ -501,6 +508,56 @@ void alc_opensles_resume()
     }    
 }
 
+static int alc_opensles_get_android_api()
+{
+	jclass androidVersionClass = NULL;
+	jfieldID androidSdkIntField = NULL;
+	int androidApiLevel = 0;
+	JNIEnv* env = NULL;
+	
+	(*javaVM)->GetEnv(javaVM, (void**)&env, JNI_VERSION_1_4);
+	androidVersionClass = (*env)->FindClass(env, "android/os/Build$VERSION");
+	if (androidVersionClass)
+	{
+		androidSdkIntField = (*env)->GetStaticFieldID(env, androidVersionClass, "SDK_INT", "I");
+		if (androidSdkIntField != NULL)
+		{
+			androidApiLevel = (int)((*env)->GetStaticIntField(env, androidVersionClass, androidSdkIntField));
+		}
+		(*env)->DeleteLocalRef(env, androidVersionClass);
+	}
+	return androidApiLevel;
+}
+
+static void alc_opensles_set_java_vm(JavaVM *vm)
+{
+    javaVM = vm;
+	if(NULL == javaVM)
+	{
+		free(outputBuffers);
+		outputBuffers = NULL;
+	}
+	else
+	{
+		if(NULL == outputBuffers)
+		{
+			int android_os_version = alc_opensles_get_android_api;
+			// If running on 4.1 (Jellybean) or later, use 8 buffers to avoid breakup/stuttering.
+			if(android_os_version >= 16)
+			{
+				bufferCount = 8;
+			}
+			// Else, use 4 buffers to reduce latency
+			else
+			{
+				bufferCount = 4;
+			}
+				
+			outputBuffers = (outputBuffer_t*)malloc(sizeof(outputBuffer_t)*bufferCount);
+		}
+	}
+}
+
 void alc_opensles_init(BackendFuncs *func_list)
 {
     LOGV("alc_opensles_init");
@@ -511,6 +568,11 @@ void alc_opensles_init(BackendFuncs *func_list)
     }
 
     *func_list = opensles_funcs;
+
+	// We need the JavaVM for JNI so we can detect the OS version number at runtime.
+	// This is because we need to use different bufferCount values for Android 4.1 vs. pre-4.1.
+	// This must be set before JNI_OnLoad is invoked.
+	apportableOpenALFuncs.alc_android_set_java_vm = alc_opensles_set_java_vm;
 }
 
 void alc_opensles_deinit(void)
