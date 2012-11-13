@@ -319,55 +319,6 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
     // create the engine and output mix objects
     SLresult result = alc_opensles_create_native_audio_engine();
 
-    // create buffer queue audio player
-
-    // configure audio source
-    SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
-    SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, SL_SAMPLINGRATE_44_1,
-        SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,
-        SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN};
-    SLDataSource audioSrc = {&loc_bufq, &format_pcm};
-
-    // configure audio sink
-    SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
-    SLDataSink audioSnk = {&loc_outmix, NULL};
-
-    // create audio player
-    LOGV("create audio player");
-    const SLInterfaceID ids[1] = {*pSL_IID_ANDROIDSIMPLEBUFFERQUEUE};
-    const SLboolean req[1] = {SL_BOOLEAN_TRUE};
-    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk,
-        1, ids, req);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // realize the player
-    result = (*bqPlayerObject)->Realize(bqPlayerObject, SL_BOOLEAN_FALSE);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // get the play interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_PLAY, &bqPlayerPlay);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // get the buffer queue interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_BUFFERQUEUE,
-            &bqPlayerBufferQueue);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // register callback on the buffer queue
-    result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, opensles_callback, (void *) pDevice);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // playback_lock = createThreadLock();
-    start_playback(pDevice);
-
-    // set the player's state to playing
-    result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // enqueue the first buffer to kick off the callbacks
-    result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, "\0", 1);
-    assert(SL_RESULT_SUCCESS == result);
-
     return ALC_TRUE;
 }
 
@@ -412,8 +363,62 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     unsigned channels = ChannelsFromDevFmt(pDevice->FmtChans);
     unsigned samples = pDevice->UpdateSize;
     unsigned size = samples * channels * bits / 8;
+	SLuint32 sampling_rate = pDevice->Frequency * 1000;
+	SLresult result;
     LOGV("bits=%u, channels=%u, samples=%u, size=%u, freq=%u", bits, channels, samples, size, pDevice->Frequency);
-    SetDefaultWFXChannelOrder(pDevice);
+
+    // create buffer queue audio player
+
+    // configure audio source
+    SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
+//    SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, SL_SAMPLINGRATE_44_1,
+    SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, sampling_rate,
+        SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,
+        SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN};
+    SLDataSource audioSrc = {&loc_bufq, &format_pcm};
+
+    // configure audio sink
+    SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
+    SLDataSink audioSnk = {&loc_outmix, NULL};
+
+    // create audio player
+    LOGV("create audio player");
+    const SLInterfaceID ids[1] = {*pSL_IID_ANDROIDSIMPLEBUFFERQUEUE};
+    const SLboolean req[1] = {SL_BOOLEAN_TRUE};
+    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk,
+        1, ids, req);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // realize the player
+    result = (*bqPlayerObject)->Realize(bqPlayerObject, SL_BOOLEAN_FALSE);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // get the play interface
+    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_PLAY, &bqPlayerPlay);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // get the buffer queue interface
+    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_BUFFERQUEUE,
+            &bqPlayerBufferQueue);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // register callback on the buffer queue
+    result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, opensles_callback, (void *) pDevice);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // playback_lock = createThreadLock();
+    start_playback(pDevice);
+
+    // set the player's state to playing
+    result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // enqueue the first buffer to kick off the callbacks
+    result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, "\0", 1);
+    assert(SL_RESULT_SUCCESS == result);
+
+
+   SetDefaultWFXChannelOrder(pDevice);
 
     return ALC_TRUE;
 }
