@@ -295,7 +295,8 @@ void alc_audiotrack_init(BackendFuncs *func_list)
 {
     *func_list = android_funcs;
 
-    if (apportableOpenALFuncs.alc_android_suspend == NULL) {
+    if (apportableOpenALFuncs.alc_android_suspend == NULL
+		&& apportableOpenALFuncs.alc_android_set_java_vm == NULL) {
         apportableOpenALFuncs.alc_android_suspend = alc_audiotrack_suspend;
         apportableOpenALFuncs.alc_android_resume = alc_audiotrack_resume;
         apportableOpenALFuncs.alc_android_set_java_vm = alc_audiotrack_set_java_vm;
