@@ -226,6 +226,7 @@ static void android_stop_playback(ALCdevice *device)
         data->running = 0;
         pthread_join(data->thread, NULL);
     }
+    suspended = 0;
 }
 
 static ALCboolean android_open_capture(ALCdevice *pDevice, const ALCchar *deviceName)
@@ -308,6 +309,7 @@ void alc_audiotrack_deinit(void)
     /* release cached AudioTrack class */
     (*env)->DeleteGlobalRef(env, cAudioTrack);
     (*javaVM)->DetachCurrentThread(javaVM);
+    cAudioTrack = NULL;
 }
 
 void alc_audiotrack_probe(int type)
