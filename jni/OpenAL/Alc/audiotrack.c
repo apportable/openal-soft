@@ -133,6 +133,7 @@ static void* thread_function(void* arg)
 
     (*env)->CallNonvirtualVoidMethod(env, track, cAudioTrack, mStop);
     (*env)->CallNonvirtualVoidMethod(env, track, cAudioTrack, mRelease);
+    audioTrackPlaying = 0;
 
     (*env)->PopLocalFrame(env, NULL);
 
@@ -285,6 +286,10 @@ static void alc_audiotrack_suspend()
 static void alc_audiotrack_resume()
 {
     suspended = 0;
+    while (!audioTrackPlaying)
+    {
+        sched_yield();
+    }
 }
 
 static void alc_audiotrack_set_java_vm(JavaVM *vm)

@@ -109,6 +109,7 @@ static outputBuffer_t* outputBuffers = NULL;
 typedef struct {
     pthread_t playbackThread;
     char threadShouldRun;
+    char threadIsReady;
     char lastBufferEnqueued;
     char lastBufferMixed;
 
@@ -168,6 +169,7 @@ static void *playback_function(void * context) {
             ts.tv_nsec += 5000000;
             rc = pthread_cond_timedwait(&(buffer->cond), &(buffer->mutex), &ts);
         }
+        devState->threadIsReady = 1;
 
         aluMixData(pDevice, buffer->buffer, bufferSize/frameSize);
         buffer->state = OUTPUT_BUFFER_STATE_MIXED;
@@ -223,6 +225,10 @@ static void start_playback(ALCdevice *pDevice) {
     pthread_attr_setschedpolicy(&playbackThreadAttr, SCHED_RR);
     pthread_attr_setschedparam(&playbackThreadAttr, &playbackThreadParam);
     pthread_create(&(devState->playbackThread), &playbackThreadAttr, playback_function,  (void *) pDevice);
+    while (devState->threadShouldRun && (0 == devState->threadIsReady))
+    {
+        sched_yield();
+    }
 }
 
 static void stop_playback(ALCdevice *pDevice) {
