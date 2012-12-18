@@ -1,6 +1,8 @@
 #ifndef _ALU_H_
 #define _ALU_H_
 
+#include "config.h"
+
 #include "AL/al.h"
 #include "AL/alc.h"
 #include "AL/alext.h"
@@ -71,9 +73,12 @@ typedef enum {
     BACK_CENTER,
     SIDE_LEFT,
     SIDE_RIGHT,
-
-    MAXCHANNELS
 } Channel;
+
+#ifndef MAXCHANNELS
+#define MAXCHANNELS (SIDE_RIGHT+1)
+#error MAXCHANNELS
+#endif
 
 #define BUFFERSIZE 4096
 

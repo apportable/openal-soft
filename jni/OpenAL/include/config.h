@@ -8,6 +8,10 @@
 
 /* Define if we have the Android backend */
 #if defined(ANDROID)
+
+// Stereo only on Android back-ends
+#define MAXCHANNELS 3
+
 #if defined(POST_FROYO)
 #define HAVE_OPENSLES 1
 #endif
