@@ -34,6 +34,9 @@
 #include <sched.h>
 #include <sys/prctl.h>
 
+#include <jni.h>
+
+
 #define LOG_NDEBUG 0
 #define LOG_TAG "OpenAL_SLES"
 
@@ -69,6 +72,8 @@ static SLPlayItf bqPlayerPlay;
 static ALCdevice *openSLESDevice = NULL;
 static SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue;
 
+// JNI stuff so we can get the runtime OS version number
+static JavaVM* javaVM = NULL;
 
 static long timespecdiff(struct timespec *starttime, struct timespec *finishtime)
 {
@@ -80,7 +85,8 @@ static long timespecdiff(struct timespec *starttime, struct timespec *finishtime
 
 // thread to mix and enqueue data
 #define bufferSize (1024*4)
-#define bufferCount 8
+// Cannot be a constant because we need to tweak differently depending on OS version.
+size_t bufferCount = 8;
 
 typedef enum {
     OUTPUT_BUFFER_STATE_UNKNOWN,
@@ -96,12 +102,14 @@ typedef struct outputBuffer_s {
     char buffer[bufferSize];
 } outputBuffer_t;
 
-static outputBuffer_t outputBuffers[bufferCount];
+// Will dynamically create the number of buffers (array elements) based on OS version.
+static outputBuffer_t* outputBuffers = NULL;
 
 
 typedef struct {
     pthread_t playbackThread;
     char threadShouldRun;
+    char threadIsReady;
     char lastBufferEnqueued;
     char lastBufferMixed;
 
@@ -161,6 +169,7 @@ static void *playback_function(void * context) {
             ts.tv_nsec += 5000000;
             rc = pthread_cond_timedwait(&(buffer->cond), &(buffer->mutex), &ts);
         }
+        devState->threadIsReady = 1;
 
         aluMixData(pDevice, buffer->buffer, bufferSize/frameSize);
         buffer->state = OUTPUT_BUFFER_STATE_MIXED;
@@ -173,6 +182,7 @@ static void *playback_function(void * context) {
 
 static void start_playback(ALCdevice *pDevice) {
     opesles_data_t *devState = NULL;
+	int i;
 
     if (pDevice->ExtraData == NULL) {
         devState = malloc(sizeof(opesles_data_t));
@@ -182,7 +192,7 @@ static void start_playback(ALCdevice *pDevice) {
         devState->lastBufferEnqueued = -1;
         devState->lastBufferMixed = -1;
 
-        for (int i = 0; i < bufferCount; i++) {
+        for (i = 0; i < bufferCount; i++) {
             bzero(&outputBuffers[i], sizeof(outputBuffer_t));
 
             if (pthread_mutex_init(&(outputBuffers[i].mutex), (pthread_mutexattr_t*) NULL) != 0) {
@@ -215,6 +225,10 @@ static void start_playback(ALCdevice *pDevice) {
     pthread_attr_setschedpolicy(&playbackThreadAttr, SCHED_RR);
     pthread_attr_setschedparam(&playbackThreadAttr, &playbackThreadParam);
     pthread_create(&(devState->playbackThread), &playbackThreadAttr, playback_function,  (void *) pDevice);
+    while (devState->threadShouldRun && (0 == devState->threadIsReady))
+    {
+        sched_yield();
+    }
 }
 
 static void stop_playback(ALCdevice *pDevice) {
@@ -311,55 +325,6 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
     // create the engine and output mix objects
     SLresult result = alc_opensles_create_native_audio_engine();
 
-    // create buffer queue audio player
-
-    // configure audio source
-    SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
-    SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, SL_SAMPLINGRATE_44_1,
-        SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,
-        SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN};
-    SLDataSource audioSrc = {&loc_bufq, &format_pcm};
-
-    // configure audio sink
-    SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
-    SLDataSink audioSnk = {&loc_outmix, NULL};
-
-    // create audio player
-    LOGV("create audio player");
-    const SLInterfaceID ids[1] = {*pSL_IID_ANDROIDSIMPLEBUFFERQUEUE};
-    const SLboolean req[1] = {SL_BOOLEAN_TRUE};
-    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk,
-        1, ids, req);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // realize the player
-    result = (*bqPlayerObject)->Realize(bqPlayerObject, SL_BOOLEAN_FALSE);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // get the play interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_PLAY, &bqPlayerPlay);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // get the buffer queue interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_BUFFERQUEUE,
-            &bqPlayerBufferQueue);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // register callback on the buffer queue
-    result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, opensles_callback, (void *) pDevice);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // playback_lock = createThreadLock();
-    start_playback(pDevice);
-
-    // set the player's state to playing
-    result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
-    assert(SL_RESULT_SUCCESS == result);
-
-    // enqueue the first buffer to kick off the callbacks
-    result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, "\0", 1);
-    assert(SL_RESULT_SUCCESS == result);
-
     return ALC_TRUE;
 }
 
@@ -404,8 +369,62 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     unsigned channels = ChannelsFromDevFmt(pDevice->FmtChans);
     unsigned samples = pDevice->UpdateSize;
     unsigned size = samples * channels * bits / 8;
+	SLuint32 sampling_rate = pDevice->Frequency * 1000;
+	SLresult result;
     LOGV("bits=%u, channels=%u, samples=%u, size=%u, freq=%u", bits, channels, samples, size, pDevice->Frequency);
-    SetDefaultWFXChannelOrder(pDevice);
+
+    // create buffer queue audio player
+
+    // configure audio source
+    SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
+//    SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, SL_SAMPLINGRATE_44_1,
+    SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, sampling_rate,
+        SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,
+        SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN};
+    SLDataSource audioSrc = {&loc_bufq, &format_pcm};
+
+    // configure audio sink
+    SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
+    SLDataSink audioSnk = {&loc_outmix, NULL};
+
+    // create audio player
+    LOGV("create audio player");
+    const SLInterfaceID ids[1] = {*pSL_IID_ANDROIDSIMPLEBUFFERQUEUE};
+    const SLboolean req[1] = {SL_BOOLEAN_TRUE};
+    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk,
+        1, ids, req);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // realize the player
+    result = (*bqPlayerObject)->Realize(bqPlayerObject, SL_BOOLEAN_FALSE);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // get the play interface
+    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_PLAY, &bqPlayerPlay);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // get the buffer queue interface
+    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_BUFFERQUEUE,
+            &bqPlayerBufferQueue);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // register callback on the buffer queue
+    result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, opensles_callback, (void *) pDevice);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // playback_lock = createThreadLock();
+    start_playback(pDevice);
+
+    // set the player's state to playing
+    result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // enqueue the first buffer to kick off the callbacks
+    result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, "\0", 1);
+    assert(SL_RESULT_SUCCESS == result);
+
+
+   SetDefaultWFXChannelOrder(pDevice);
 
     return ALC_TRUE;
 }
@@ -500,6 +519,56 @@ void alc_opensles_resume()
     }    
 }
 
+static int alc_opensles_get_android_api()
+{
+	jclass androidVersionClass = NULL;
+	jfieldID androidSdkIntField = NULL;
+	int androidApiLevel = 0;
+	JNIEnv* env = NULL;
+	
+	(*javaVM)->GetEnv(javaVM, (void**)&env, JNI_VERSION_1_4);
+	androidVersionClass = (*env)->FindClass(env, "android/os/Build$VERSION");
+	if (androidVersionClass)
+	{
+		androidSdkIntField = (*env)->GetStaticFieldID(env, androidVersionClass, "SDK_INT", "I");
+		if (androidSdkIntField != NULL)
+		{
+			androidApiLevel = (int)((*env)->GetStaticIntField(env, androidVersionClass, androidSdkIntField));
+		}
+		(*env)->DeleteLocalRef(env, androidVersionClass);
+	}
+	return androidApiLevel;
+}
+
+static void alc_opensles_set_java_vm(JavaVM *vm)
+{
+    javaVM = vm;
+	if(NULL == javaVM)
+	{
+		free(outputBuffers);
+		outputBuffers = NULL;
+	}
+	else
+	{
+		if(NULL == outputBuffers)
+		{
+			int android_os_version = alc_opensles_get_android_api;
+			// If running on 4.1 (Jellybean) or later, use 8 buffers to avoid breakup/stuttering.
+			if(android_os_version >= 16)
+			{
+				bufferCount = 8;
+			}
+			// Else, use 4 buffers to reduce latency
+			else
+			{
+				bufferCount = 4;
+			}
+				
+			outputBuffers = (outputBuffer_t*)malloc(sizeof(outputBuffer_t)*bufferCount);
+		}
+	}
+}
+
 void alc_opensles_init(BackendFuncs *func_list)
 {
     LOGV("alc_opensles_init");
@@ -510,6 +579,11 @@ void alc_opensles_init(BackendFuncs *func_list)
     }
 
     *func_list = opensles_funcs;
+
+	// We need the JavaVM for JNI so we can detect the OS version number at runtime.
+	// This is because we need to use different bufferCount values for Android 4.1 vs. pre-4.1.
+	// This must be set before JNI_OnLoad is invoked.
+	apportableOpenALFuncs.alc_android_set_java_vm = alc_opensles_set_java_vm;
 }
 
 void alc_opensles_deinit(void)

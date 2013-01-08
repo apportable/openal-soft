@@ -133,6 +133,7 @@ static void* thread_function(void* arg)
 
     (*env)->CallNonvirtualVoidMethod(env, track, cAudioTrack, mStop);
     (*env)->CallNonvirtualVoidMethod(env, track, cAudioTrack, mRelease);
+    audioTrackPlaying = 0;
 
     (*env)->PopLocalFrame(env, NULL);
 
@@ -226,6 +227,7 @@ static void android_stop_playback(ALCdevice *device)
         data->running = 0;
         pthread_join(data->thread, NULL);
     }
+    suspended = 0;
 }
 
 static ALCboolean android_open_capture(ALCdevice *pDevice, const ALCchar *deviceName)
@@ -284,6 +286,10 @@ static void alc_audiotrack_suspend()
 static void alc_audiotrack_resume()
 {
     suspended = 0;
+    while (!audioTrackPlaying)
+    {
+        sched_yield();
+    }
 }
 
 static void alc_audiotrack_set_java_vm(JavaVM *vm)
@@ -295,7 +301,8 @@ void alc_audiotrack_init(BackendFuncs *func_list)
 {
     *func_list = android_funcs;
 
-    if (apportableOpenALFuncs.alc_android_suspend == NULL) {
+    if (apportableOpenALFuncs.alc_android_suspend == NULL
+		&& apportableOpenALFuncs.alc_android_set_java_vm == NULL) {
         apportableOpenALFuncs.alc_android_suspend = alc_audiotrack_suspend;
         apportableOpenALFuncs.alc_android_resume = alc_audiotrack_resume;
         apportableOpenALFuncs.alc_android_set_java_vm = alc_audiotrack_set_java_vm;
@@ -307,6 +314,7 @@ void alc_audiotrack_deinit(void)
     /* release cached AudioTrack class */
     (*env)->DeleteGlobalRef(env, cAudioTrack);
     (*javaVM)->DetachCurrentThread(javaVM);
+    cAudioTrack = NULL;
 }
 
 void alc_audiotrack_probe(int type)
