@@ -2014,6 +2014,7 @@ void SetDefaultChannelOrder(ALCdevice *device)
     case DevFmtStereo: device->DevChannels[FRONT_LEFT]  = 0;
                        device->DevChannels[FRONT_RIGHT] = 1; break;
 
+#ifndef STEREO_ONLY
     case DevFmtQuad: device->DevChannels[FRONT_LEFT]  = 0;
                      device->DevChannels[FRONT_RIGHT] = 1;
                      device->DevChannels[BACK_LEFT]   = 2;
@@ -2042,6 +2043,7 @@ void SetDefaultChannelOrder(ALCdevice *device)
                     device->DevChannels[LFE]          = 5;
                     device->DevChannels[SIDE_LEFT]    = 6;
                     device->DevChannels[SIDE_RIGHT]   = 7; break;
+#endif
     }
 }
 // Sets the default order used by WaveFormatEx
@@ -2054,6 +2056,7 @@ void SetDefaultWFXChannelOrder(ALCdevice *device)
     case DevFmtStereo: device->DevChannels[FRONT_LEFT]  = 0;
                        device->DevChannels[FRONT_RIGHT] = 1; break;
 
+#ifndef STEREO_ONLY
     case DevFmtQuad: device->DevChannels[FRONT_LEFT]  = 0;
                      device->DevChannels[FRONT_RIGHT] = 1;
                      device->DevChannels[BACK_LEFT]   = 2;
@@ -2082,6 +2085,7 @@ void SetDefaultWFXChannelOrder(ALCdevice *device)
                     device->DevChannels[BACK_RIGHT]   = 5;
                     device->DevChannels[SIDE_LEFT]    = 6;
                     device->DevChannels[SIDE_RIGHT]   = 7; break;
+#endif
     }
 }
 

@@ -11,6 +11,7 @@
 
 // Stereo only on Android back-ends
 #define MAXCHANNELS 3
+#define STEREO_ONLY 1
 
 #if defined(POST_FROYO)
 #define HAVE_OPENSLES 1
