@@ -1332,8 +1332,8 @@ static void Convert_IMA4_##T(ALubyte *dst, const T *src, ALuint numchans,     \
 {                                                                             \
     ALuint i, j;                                                              \
     ALshort tmp[65*MAXCHANNELS]; /* Max samples an IMA4 frame can be */       \
-    ALint sample[MAXCHANNELS] = {0,0,0,0,0,0,0,0};                            \
-    ALint index[MAXCHANNELS] = {0,0,0,0,0,0,0,0};                             \
+    ALint sample[MAXCHANNELS] = {0};                                          \
+    ALint index[MAXCHANNELS] = {0};                                           \
     for(i = 0;i < numblocks;i++)                                              \
     {                                                                         \
         for(j = 0;j < 65*numchans;j++)                                        \
