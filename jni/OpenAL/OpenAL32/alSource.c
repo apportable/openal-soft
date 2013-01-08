@@ -36,6 +36,10 @@
 // Apportable: Defines a cap on the maximum number of playing sources
 extern int alc_max_sources;
 extern int alc_active_sources;
+#define LOG_TAG "alSource.c"
+#define LOGV(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#else
+#define LOGV(...)
 #endif
 
 resampler_t DefaultResampler;
@@ -1306,6 +1310,7 @@ AL_API ALvoid AL_APIENTRY alSourcePlayv(ALsizei n, const ALuint *sources)
 #ifdef MAX_SOURCES_LOW
     // Apportable: Cap the number of active source that are playing
     if (Context->ActiveSourceCount + n > alc_max_sources) {
+        LOGV("Skipping starting some sources due to lack of CPU time");
     	if (Context->ActiveSourceCount > alc_max_sources) {
     		n = 0;
     	} else {
