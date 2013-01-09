@@ -552,7 +552,7 @@ static void alc_opensles_set_java_vm(JavaVM *vm)
 	{
 		if(NULL == outputBuffers)
 		{
-			int android_os_version = alc_opensles_get_android_api;
+			int android_os_version = alc_opensles_get_android_api();
 			// If running on 4.1 (Jellybean) or later, use 8 buffers to avoid breakup/stuttering.
 			if(android_os_version >= 16)
 			{

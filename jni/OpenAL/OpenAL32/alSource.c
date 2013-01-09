@@ -36,7 +36,7 @@
 // Apportable: Defines a cap on the maximum number of playing sources
 extern int alc_max_sources;
 extern int alc_active_sources;
-#define LOG_TAG "alSource.c"
+#define LOG_TAG "OpenAL_alSource.c"
 #define LOGV(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #else
 #define LOGV(...)
