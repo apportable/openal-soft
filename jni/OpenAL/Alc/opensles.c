@@ -66,11 +66,6 @@ static SLEngineItf engineEngine;
 // output mix interfaces
 static SLObjectItf outputMixObject = NULL;
 
-// buffer queue player interfaces
-static SLObjectItf bqPlayerObject = NULL;
-static SLPlayItf bqPlayerPlay;
-static ALCdevice *openSLESDevice = NULL;
-static SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue;
 
 // JNI stuff so we can get the runtime OS version number
 static JavaVM* javaVM = NULL;
@@ -103,7 +98,6 @@ typedef struct outputBuffer_s {
 } outputBuffer_t;
 
 // Will dynamically create the number of buffers (array elements) based on OS version.
-static outputBuffer_t* outputBuffers = NULL;
 
 
 typedef struct {
@@ -113,7 +107,54 @@ typedef struct {
     char lastBufferEnqueued;
     char lastBufferMixed;
 
+    outputBuffer_t *outputBuffers;
+
+    // buffer queue player interfaces
+    SLObjectItf bqPlayerObject;
+    SLPlayItf bqPlayerPlay;
+    SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue;
 } opesles_data_t;
+#define MAX_DEVICES 3
+static ALCdevice *deviceList[MAX_DEVICES] = {NULL};
+static pthread_mutex_t deviceListMutex = PTHREAD_MUTEX_INITIALIZER;
+
+typedef void (*deviceListFn)(ALCdevice *);
+
+static void devlist_add(ALCdevice *pDevice) {
+    pthread_mutex_lock(&(deviceListMutex));
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (deviceList[i] == pDevice) {
+            break;
+        } else if (deviceList[i] == NULL) {
+            deviceList[i] = pDevice;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&(deviceListMutex));
+}
+
+static void devlist_remove(ALCdevice *pDevice) {
+    pthread_mutex_lock(&(deviceListMutex));
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (deviceList[i] == pDevice) {
+            deviceList[i] = NULL;
+        }
+    }
+    pthread_mutex_unlock(&(deviceListMutex));
+}
+
+static void devlist_process(deviceListFn mapFunction) {
+    pthread_mutex_lock(&(deviceListMutex));    
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (deviceList[i]) {
+            pthread_mutex_unlock(&(deviceListMutex));
+            mapFunction(deviceList[i]);
+            pthread_mutex_lock(&(deviceListMutex));
+        }
+    }
+    pthread_mutex_unlock(&(deviceListMutex));
+}
+
 
 static void *playback_function(void * context) {
     LOGV("playback_function started");
@@ -137,7 +178,7 @@ static void *playback_function(void * context) {
         }
 
         bufferIndex = (++bufferIndex) % bufferCount;
-        buffer = &(outputBuffers[bufferIndex]);
+        buffer = &(devState->outputBuffers[bufferIndex]);
 
         pthread_mutex_lock(&(buffer->mutex));
 
@@ -152,9 +193,9 @@ static void *playback_function(void * context) {
 
             // This is a little hacky, but here we avoid using a buffer too soon after it is enqueued
             if (buffer->state == OUTPUT_BUFFER_STATE_ENQUEUED) {
-                outputBuffer_t *buffer1 = &(outputBuffers[(bufferIndex + 1) % bufferCount]);
-                outputBuffer_t *buffer2 = &(outputBuffers[(bufferIndex + 2) % bufferCount]);
-                outputBuffer_t *buffer3 = &(outputBuffers[(bufferIndex + 3) % bufferCount]);
+                outputBuffer_t *buffer1 = &(devState->outputBuffers[(bufferIndex + 1) % bufferCount]);
+                outputBuffer_t *buffer2 = &(devState->outputBuffers[(bufferIndex + 2) % bufferCount]);
+                outputBuffer_t *buffer3 = &(devState->outputBuffers[(bufferIndex + 3) % bufferCount]);
                 if (buffer1->state == OUTPUT_BUFFER_STATE_ENQUEUED &&
                     buffer2->state == OUTPUT_BUFFER_STATE_ENQUEUED &&
                     buffer3->state == OUTPUT_BUFFER_STATE_ENQUEUED) {
@@ -180,32 +221,50 @@ static void *playback_function(void * context) {
     }
 }
 
+SLresult alc_opensles_init_extradata(ALCdevice *pDevice)
+{
+    opesles_data_t *devState = NULL;
+    int i;
+    devState = malloc(sizeof(opesles_data_t));
+    if (!devState) {
+        return SL_RESULT_MEMORY_FAILURE;
+    }
+    bzero(devState, sizeof(opesles_data_t));
+    devState->outputBuffers = (outputBuffer_t*) malloc(sizeof(outputBuffer_t)*bufferCount);
+    if (!devState->outputBuffers) {
+        free(devState);
+        return SL_RESULT_MEMORY_FAILURE;
+    }
+    pDevice->ExtraData = devState;
+    bzero(devState->outputBuffers, sizeof(outputBuffer_t)*bufferCount);
+    devState->lastBufferEnqueued = -1;
+    devState->lastBufferMixed = -1;
+    for (i = 0; i < bufferCount; i++) {
+        if (pthread_mutex_init(&(devState->outputBuffers[i].mutex), (pthread_mutexattr_t*) NULL) != 0) {
+            LOGV("Error on init of mutex");
+            free(devState->outputBuffers);
+            free(devState);
+            return SL_RESULT_UNKNOWN_ERROR;
+        }
+        if (pthread_cond_init(&(devState->outputBuffers[i].cond), (pthread_condattr_t*) NULL) != 0) {
+            LOGV("Error on init of cond");
+            free(devState->outputBuffers);
+            free(devState);
+            return SL_RESULT_UNKNOWN_ERROR;
+        }
+        devState->outputBuffers[i].state = OUTPUT_BUFFER_STATE_FREE;
+    }
+    // For the Android suspend/resume functionaly, keep track of all device contexts
+    devlist_add(pDevice);
+    return SL_RESULT_SUCCESS;
+}
+
 static void start_playback(ALCdevice *pDevice) {
     opesles_data_t *devState = NULL;
 	int i;
 
     if (pDevice->ExtraData == NULL) {
-        devState = malloc(sizeof(opesles_data_t));
-        bzero(devState, sizeof(opesles_data_t));
-        pDevice->ExtraData = devState;
-
-        devState->lastBufferEnqueued = -1;
-        devState->lastBufferMixed = -1;
-
-        for (i = 0; i < bufferCount; i++) {
-            bzero(&outputBuffers[i], sizeof(outputBuffer_t));
-
-            if (pthread_mutex_init(&(outputBuffers[i].mutex), (pthread_mutexattr_t*) NULL) != 0) {
-                LOGV("Error on init of mutex");
-            }
-            if (pthread_cond_init(&(outputBuffers[i].cond), (pthread_condattr_t*) NULL) != 0) {
-                LOGV("Error on init of cond");
-            }
-            outputBuffers[i].state = OUTPUT_BUFFER_STATE_FREE;
-        }
-
-        // For the suspend/resume functionaly, we only support one device for now
-        openSLESDevice = pDevice;
+        alc_opensles_init_extradata(pDevice);
     } else {
         devState = (opesles_data_t *) pDevice->ExtraData;
     }
@@ -250,7 +309,7 @@ static void opensles_callback(SLAndroidSimpleBufferQueueItf bq, void *context)
     outputBuffer_t *buffer = NULL;
 
     bufferIndex = (++bufferIndex) % bufferCount;
-    buffer = &(outputBuffers[bufferIndex]);
+    buffer = &(devState->outputBuffers[bufferIndex]);
 
     pthread_mutex_lock(&(buffer->mutex));
     while (buffer->state != OUTPUT_BUFFER_STATE_MIXED) {
@@ -266,7 +325,7 @@ static void opensles_callback(SLAndroidSimpleBufferQueueItf bq, void *context)
         }
     }
 
-    result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buffer->buffer, bufferSize);
+    result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, buffer->buffer, bufferSize);
     if (SL_RESULT_SUCCESS == result) {
         buffer->state = OUTPUT_BUFFER_STATE_ENQUEUED;
         devState->lastBufferEnqueued = bufferIndex;
@@ -315,7 +374,14 @@ SLresult alc_opensles_create_native_audio_engine()
 static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *deviceName)
 {
     LOGV("opensles_open_playback pDevice=%p, deviceName=%s", pDevice, deviceName);
+    opesles_data_t *devState;
+    if (pDevice->ExtraData == NULL) {
+        alc_opensles_init_extradata(pDevice);
+    } else {
+        devState = (opesles_data_t *) pDevice->ExtraData;
+    }
 
+    // Check if probe has linked the opensl symbols
     if (pslCreateEngine == NULL) {
         alc_opensles_probe(DEVICE_PROBE);
         if (pslCreateEngine == NULL) {
@@ -332,39 +398,27 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
 static void opensles_close_playback(ALCdevice *pDevice)
 {
     LOGV("opensles_close_playback pDevice=%p", pDevice);
+    opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
 
     // shut down the native audio system
 
     // destroy buffer queue audio player object, and invalidate all associated interfaces
-    if (bqPlayerObject != NULL) {
-        (*bqPlayerObject)->Destroy(bqPlayerObject);
-        bqPlayerObject = NULL;
-        bqPlayerPlay = NULL;
-        bqPlayerBufferQueue = NULL;
+    if (devState->bqPlayerObject != NULL) {
+        (*devState->bqPlayerObject)->Destroy(devState->bqPlayerObject);
+        devState->bqPlayerObject = NULL;
+        devState->bqPlayerPlay = NULL;
+        devState->bqPlayerBufferQueue = NULL;
     }
 
-    // destroy output mix object, and invalidate all associated interfaces
-    if (outputMixObject != NULL) {
-        (*outputMixObject)->Destroy(outputMixObject);
-        outputMixObject = NULL;
-    }
 
-    // destroy engine object, and invalidate all associated interfaces
-    if (engineObject != NULL) {
-        (*engineObject)->Destroy(engineObject);
-        engineObject = NULL;
-        engineEngine = NULL;
-    }
 
-    if (openSLESDevice == pDevice)
-    {
-        openSLESDevice = NULL;
-    }
+    devlist_remove(pDevice);
 }
 
 static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
 {
     LOGV("opensles_reset_playback pDevice=%p", pDevice);
+    opesles_data_t *devState;
     unsigned bits = BytesFromDevFmt(pDevice->FmtType) * 8;
     unsigned channels = ChannelsFromDevFmt(pDevice->FmtChans);
     unsigned samples = pDevice->UpdateSize;
@@ -372,6 +426,8 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
 	SLuint32 sampling_rate = pDevice->Frequency * 1000;
 	SLresult result;
     LOGV("bits=%u, channels=%u, samples=%u, size=%u, freq=%u", bits, channels, samples, size, pDevice->Frequency);
+
+    devState = (opesles_data_t *) pDevice->ExtraData;
 
     // create buffer queue audio player
 
@@ -391,40 +447,41 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     LOGV("create audio player");
     const SLInterfaceID ids[1] = {*pSL_IID_ANDROIDSIMPLEBUFFERQUEUE};
     const SLboolean req[1] = {SL_BOOLEAN_TRUE};
-    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk,
+    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &devState->bqPlayerObject, &audioSrc, &audioSnk,
         1, ids, req);
     assert(SL_RESULT_SUCCESS == result);
 
     // realize the player
-    result = (*bqPlayerObject)->Realize(bqPlayerObject, SL_BOOLEAN_FALSE);
+    result = (*devState->bqPlayerObject)->Realize(devState->bqPlayerObject, SL_BOOLEAN_FALSE);
     assert(SL_RESULT_SUCCESS == result);
 
     // get the play interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_PLAY, &bqPlayerPlay);
+    result = (*devState->bqPlayerObject)->GetInterface(devState->bqPlayerObject, *pSL_IID_PLAY, &devState->bqPlayerPlay);
     assert(SL_RESULT_SUCCESS == result);
 
     // get the buffer queue interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, *pSL_IID_BUFFERQUEUE,
-            &bqPlayerBufferQueue);
+    result = (*devState->bqPlayerObject)->GetInterface(devState->bqPlayerObject, *pSL_IID_BUFFERQUEUE,
+            &devState->bqPlayerBufferQueue);
     assert(SL_RESULT_SUCCESS == result);
 
     // register callback on the buffer queue
-    result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, opensles_callback, (void *) pDevice);
+    result = (*devState->bqPlayerBufferQueue)->RegisterCallback(devState->bqPlayerBufferQueue, opensles_callback, (void *) pDevice);
     assert(SL_RESULT_SUCCESS == result);
 
     // playback_lock = createThreadLock();
     start_playback(pDevice);
 
     // set the player's state to playing
-    result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+    result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PLAYING);
     assert(SL_RESULT_SUCCESS == result);
 
     // enqueue the first buffer to kick off the callbacks
-    result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, "\0", 1);
+    result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, "\0", 1);
     assert(SL_RESULT_SUCCESS == result);
 
 
-   SetDefaultWFXChannelOrder(pDevice);
+    SetDefaultWFXChannelOrder(pDevice);
+    devlist_add(pDevice);
 
     return ALC_TRUE;
 }
@@ -485,38 +542,44 @@ BackendFuncs opensles_funcs = {
 
 // global entry points called from XYZZY
 
-
-void alc_opensles_suspend()
-{
+ 
+static void suspend_device(ALCdevice *pDevice) {
     SLresult result;
-
-    if (bqPlayerPlay) {
-        result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PAUSED);
-        assert(SL_RESULT_SUCCESS == result);
-        result = (*bqPlayerBufferQueue)->Clear(bqPlayerBufferQueue);
-        assert(SL_RESULT_SUCCESS == result);
-    }
-
-    if (openSLESDevice) {
-        stop_playback(openSLESDevice);
+    if (pDevice) {
+        opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
+        if (devState->bqPlayerPlay) {
+            result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PAUSED);
+            assert(SL_RESULT_SUCCESS == result);
+            result = (*devState->bqPlayerBufferQueue)->Clear(devState->bqPlayerBufferQueue);
+            assert(SL_RESULT_SUCCESS == result);
+        }
+        stop_playback(pDevice);
     }
 }
 
+static void resume_device(ALCdevice *pDevice) {
+    SLresult result;
+    if (pDevice) {
+        opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
+        if (devState->bqPlayerPlay) {
+            result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+            assert(SL_RESULT_SUCCESS == result);
+            // Pump some blank data into the buffer to stimulate the callback
+            result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, "\0", 1);
+            assert(SL_RESULT_SUCCESS == result);
+        }
+        start_playback(pDevice);
+     }
+ }
+
+void alc_opensles_suspend()
+{
+    devlist_process(&suspend_device);
+}
+ 
 void alc_opensles_resume()
 {
-    SLresult result;
-
-    if (bqPlayerPlay) {
-        result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
-        assert(SL_RESULT_SUCCESS == result);
-        // Pump some blank data into the buffer to stimulate the callback
-        result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, "\0", 1);
-        assert(SL_RESULT_SUCCESS == result);
-    }
-
-    if (openSLESDevice) {
-        start_playback(openSLESDevice);
-    }    
+    devlist_process(&resume_device);
 }
 
 static int alc_opensles_get_android_api()
@@ -542,29 +605,20 @@ static int alc_opensles_get_android_api()
 
 static void alc_opensles_set_java_vm(JavaVM *vm)
 {
+    // Called once and only once from JNI_OnLoad
     javaVM = vm;
-	if(NULL == javaVM)
+	if(NULL != javaVM)
 	{
-		free(outputBuffers);
-		outputBuffers = NULL;
-	}
-	else
-	{
-		if(NULL == outputBuffers)
+		int android_os_version = alc_opensles_get_android_api();
+		// If running on 4.1 (Jellybean) or later, use 8 buffers to avoid breakup/stuttering.
+		if(android_os_version >= 16)
 		{
-			int android_os_version = alc_opensles_get_android_api();
-			// If running on 4.1 (Jellybean) or later, use 8 buffers to avoid breakup/stuttering.
-			if(android_os_version >= 16)
-			{
-				bufferCount = 8;
-			}
-			// Else, use 4 buffers to reduce latency
-			else
-			{
-				bufferCount = 4;
-			}
-				
-			outputBuffers = (outputBuffer_t*)malloc(sizeof(outputBuffer_t)*bufferCount);
+			bufferCount = 8;
+		}
+		// Else, use 4 buffers to reduce latency
+		else
+		{
+			bufferCount = 4;
 		}
 	}
 }
@@ -582,13 +636,26 @@ void alc_opensles_init(BackendFuncs *func_list)
 
 	// We need the JavaVM for JNI so we can detect the OS version number at runtime.
 	// This is because we need to use different bufferCount values for Android 4.1 vs. pre-4.1.
-	// This must be set before JNI_OnLoad is invoked.
+	// This must be set at constructor time before JNI_OnLoad is invoked.
 	apportableOpenALFuncs.alc_android_set_java_vm = alc_opensles_set_java_vm;
 }
 
 void alc_opensles_deinit(void)
 {
     LOGV("alc_opensles_deinit");
+
+    // destroy output mix object, and invalidate all associated interfaces
+    if (outputMixObject != NULL) {
+        (*outputMixObject)->Destroy(outputMixObject);
+        outputMixObject = NULL;
+    }
+
+    // destroy engine object, and invalidate all associated interfaces
+    if (engineObject != NULL) {
+        (*engineObject)->Destroy(engineObject);
+        engineObject = NULL;
+        engineEngine = NULL;
+    }
 }
 
 void alc_opensles_probe(int type)
