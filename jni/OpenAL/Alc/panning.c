@@ -216,6 +216,7 @@ ALvoid aluInitPanning(ALCdevice *Device)
             SetSpeakerArrangement("layout_STEREO", SpeakerAngle, Speaker2Chan, Device->NumChan);
             break;
 
+#ifndef STEREO_ONLY
         case DevFmtQuad:
             Matrix[FRONT_CENTER][FRONT_LEFT]  = aluSqrt(float2ALfp(0.5));
             Matrix[FRONT_CENTER][FRONT_RIGHT] = aluSqrt(float2ALfp(0.5));
@@ -299,6 +300,7 @@ ALvoid aluInitPanning(ALCdevice *Device)
             SpeakerAngle[6] = float2ALfp( 150.0f * M_PI/180.0f);
             SetSpeakerArrangement("layout_71CHN", SpeakerAngle, Speaker2Chan, Device->NumChan);
             break;
+#endif
     }
 
     if(GetConfigValueBool(NULL, "scalemix", 0))
