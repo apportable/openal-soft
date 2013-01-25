@@ -185,6 +185,13 @@ ALvoid CalcNonAttnSourceParams(ALsource *ALSource, const ALCcontext *ALContext)
                 ALSource->Params.DryGains[1][FRONT_RIGHT] = ALfpMult(DryGain, ListenerGain);
                 break;
 
+#ifdef STEREO_ONLY
+            case DevFmtQuad:
+            case DevFmtX51:
+            case DevFmtX61:
+            case DevFmtX71:
+                break;
+#else
             case DevFmtQuad:
             case DevFmtX51:
                 DryGain = ALfpMult(DryGain, aluSqrt(float2ALfp(2.0f/4.0f)));
@@ -211,50 +218,61 @@ ALvoid CalcNonAttnSourceParams(ALsource *ALSource, const ALCcontext *ALContext)
                 ALSource->Params.DryGains[0][SIDE_LEFT]   = ALfpMult(DryGain, ListenerGain);
                 ALSource->Params.DryGains[1][SIDE_RIGHT]  = ALfpMult(DryGain, ListenerGain);
                 break;
+#endif
             }
         }
         break;
 
     case FmtRear:
+#ifndef STEREO_ONLY
         ALSource->Params.DryGains[0][BACK_LEFT]  = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[1][BACK_RIGHT] = ALfpMult(DryGain, ListenerGain);
+#endif
         break;
 
     case FmtQuad:
         ALSource->Params.DryGains[0][FRONT_LEFT]  = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[1][FRONT_RIGHT] = ALfpMult(DryGain, ListenerGain);
+#ifndef STEREO_ONLY
         ALSource->Params.DryGains[2][BACK_LEFT]   = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[3][BACK_RIGHT]  = ALfpMult(DryGain, ListenerGain);
+#endif
         break;
 
     case FmtX51:
         ALSource->Params.DryGains[0][FRONT_LEFT]   = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[1][FRONT_RIGHT]  = ALfpMult(DryGain, ListenerGain);
+#ifndef STEREO_ONLY
         ALSource->Params.DryGains[2][FRONT_CENTER] = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[3][LFE]          = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[4][BACK_LEFT]    = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[5][BACK_RIGHT]   = ALfpMult(DryGain, ListenerGain);
+#endif
         break;
 
     case FmtX61:
         ALSource->Params.DryGains[0][FRONT_LEFT]   = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[1][FRONT_RIGHT]  = ALfpMult(DryGain, ListenerGain);
+#ifndef STEREO_ONLY
         ALSource->Params.DryGains[2][FRONT_CENTER] = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[3][LFE]          = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[4][BACK_CENTER]  = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[5][SIDE_LEFT]    = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[6][SIDE_RIGHT]   = ALfpMult(DryGain, ListenerGain);
+#endif
         break;
 
     case FmtX71:
         ALSource->Params.DryGains[0][FRONT_LEFT]   = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[1][FRONT_RIGHT]  = ALfpMult(DryGain, ListenerGain);
+#ifndef STEREO_ONLY
         ALSource->Params.DryGains[2][FRONT_CENTER] = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[3][LFE]          = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[4][BACK_LEFT]    = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[5][BACK_RIGHT]   = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[6][SIDE_LEFT]    = ALfpMult(DryGain, ListenerGain);
         ALSource->Params.DryGains[7][SIDE_RIGHT]   = ALfpMult(DryGain, ListenerGain);
+#endif
         break;
     }
 

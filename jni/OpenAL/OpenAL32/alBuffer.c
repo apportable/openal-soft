@@ -1515,7 +1515,7 @@ static ALenum LoadData(ALbuffer *ALBuf, ALuint freq, ALenum NewFormat, ALsizei s
     NewChannels = ChannelsFromFmt(DstChannels);
     NewBytes = BytesFromFmt(DstType);
 
-    assert(SrcChannels == DstChannels);
+    assert((int)SrcChannels == (int)DstChannels);
 
     if(SrcType == UserFmtIMA4)
     {

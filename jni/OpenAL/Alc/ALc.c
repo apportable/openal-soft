@@ -2009,12 +2009,19 @@ void SetDefaultChannelOrder(ALCdevice *device)
 {
     switch(device->FmtChans)
     {
-    case DevFmtMono: device->DevChannels[FRONT_CENTER] = 0; break;
-
     case DevFmtStereo: device->DevChannels[FRONT_LEFT]  = 0;
                        device->DevChannels[FRONT_RIGHT] = 1; break;
 
-#ifndef STEREO_ONLY
+#ifdef STEREO_ONLY
+    case DevFmtMono:
+    case DevFmtQuad:
+    case DevFmtX51:
+    case DevFmtX61:
+    case DevFmtX71:
+        break;
+#else
+    case DevFmtMono: device->DevChannels[FRONT_CENTER] = 0; break;
+
     case DevFmtQuad: device->DevChannels[FRONT_LEFT]  = 0;
                      device->DevChannels[FRONT_RIGHT] = 1;
                      device->DevChannels[BACK_LEFT]   = 2;
@@ -2051,12 +2058,20 @@ void SetDefaultWFXChannelOrder(ALCdevice *device)
 {
     switch(device->FmtChans)
     {
-    case DevFmtMono: device->DevChannels[FRONT_CENTER] = 0; break;
 
     case DevFmtStereo: device->DevChannels[FRONT_LEFT]  = 0;
                        device->DevChannels[FRONT_RIGHT] = 1; break;
 
-#ifndef STEREO_ONLY
+#ifdef STEREO_ONLY
+    case DevFmtMono:
+    case DevFmtQuad:
+    case DevFmtX51:
+    case DevFmtX61:
+    case DevFmtX71:
+        break;
+#else
+    case DevFmtMono: device->DevChannels[FRONT_CENTER] = 0; break;
+
     case DevFmtQuad: device->DevChannels[FRONT_LEFT]  = 0;
                      device->DevChannels[FRONT_RIGHT] = 1;
                      device->DevChannels[BACK_LEFT]   = 2;
