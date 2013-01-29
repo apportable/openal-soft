@@ -66,9 +66,64 @@ static SLEngineItf engineEngine;
 // output mix interfaces
 static SLObjectItf outputMixObject = NULL;
 
-
 // JNI stuff so we can get the runtime OS version number
 static JavaVM* javaVM = NULL;
+
+static int alc_opensles_get_android_api()
+{
+    jclass androidVersionClass = NULL;
+    jfieldID androidSdkIntField = NULL;
+    int androidApiLevel = 0;
+    JNIEnv* env = NULL;
+    
+    (*javaVM)->GetEnv(javaVM, (void**)&env, JNI_VERSION_1_4);
+    androidVersionClass = (*env)->FindClass(env, "android/os/Build$VERSION");
+    if (androidVersionClass)
+    {
+        androidSdkIntField = (*env)->GetStaticFieldID(env, androidVersionClass, "SDK_INT", "I");
+        if (androidSdkIntField != NULL)
+        {
+            androidApiLevel = (int)((*env)->GetStaticIntField(env, androidVersionClass, androidSdkIntField));
+        }
+        (*env)->DeleteLocalRef(env, androidVersionClass);
+    }
+    LOGV("API:%d", androidApiLevel);
+    return androidApiLevel;
+}
+static jchar *androidModel = NULL;
+static char *alc_opensles_get_android_model()
+{
+    if (!androidModel) {
+        jclass androidBuildClass = NULL;
+        jfieldID androidModelField = NULL;
+        jstring androidModelString = NULL;
+        int androidApiLevel = 0;
+        JNIEnv* env = NULL;
+        
+        (*javaVM)->GetEnv(javaVM, (void**)&env, JNI_VERSION_1_4);
+        (*env)->PushLocalFrame(env, 5);
+        androidBuildClass = (*env)->FindClass(env, "android/os/Build");
+        if (androidBuildClass)
+        {
+            androidModelField = (*env)->GetStaticFieldID(env, androidBuildClass, "MODEL", "Ljava/lang/String;");
+            androidModelString = (*env)->GetStaticObjectField(env, androidBuildClass, androidModelField);
+            const jchar *unichars = (*env)->GetStringUTFChars(env, androidModelString, NULL);
+            if (!(*env)->ExceptionOccurred(env))
+            {
+                jsize sz = (*env)->GetStringLength(env, androidModelString);
+                androidModel = malloc(sz+1);
+                if (androidModel) {
+                    strncpy(androidModel, unichars, sz);
+                    androidModel[sz] = '\0';
+                }
+            }
+            (*env)->ReleaseStringUTFChars(env, androidModelString, unichars);
+        }
+        (*env)->PopLocalFrame(env, NULL);
+    }
+    LOGV("Model:%s", androidModel);
+    return androidModel;
+}
 
 static long timespecdiff(struct timespec *starttime, struct timespec *finishtime)
 {
@@ -78,10 +133,10 @@ static long timespecdiff(struct timespec *starttime, struct timespec *finishtime
   return msec;
  }
 
-// thread to mix and enqueue data
-#define bufferSize (1024*4)
 // Cannot be a constant because we need to tweak differently depending on OS version.
-size_t bufferCount = 8;
+static size_t bufferCount = 8;
+static size_t bufferSize = (1024*4);
+#define bufferSizeMax (1024*4)
 
 typedef enum {
     OUTPUT_BUFFER_STATE_UNKNOWN,
@@ -94,7 +149,7 @@ typedef struct outputBuffer_s {
     pthread_mutex_t mutex;
     pthread_cond_t  cond;
     outputBuffer_state_t state;
-    char buffer[bufferSize];
+    char buffer[bufferSizeMax];
 } outputBuffer_t;
 
 // Will dynamically create the number of buffers (array elements) based on OS version.
@@ -375,11 +430,6 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
 {
     LOGV("opensles_open_playback pDevice=%p, deviceName=%s", pDevice, deviceName);
     opesles_data_t *devState;
-    if (pDevice->ExtraData == NULL) {
-        alc_opensles_init_extradata(pDevice);
-    } else {
-        devState = (opesles_data_t *) pDevice->ExtraData;
-    }
 
     // Check if probe has linked the opensl symbols
     if (pslCreateEngine == NULL) {
@@ -388,6 +438,13 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
             return ALC_FALSE;
         }
     }
+
+    if (pDevice->ExtraData == NULL) {
+        alc_opensles_init_extradata(pDevice);
+    } else {
+        devState = (opesles_data_t *) pDevice->ExtraData;
+    }
+
     // create the engine and output mix objects
     SLresult result = alc_opensles_create_native_audio_engine();
 
@@ -582,27 +639,6 @@ void alc_opensles_resume()
     devlist_process(&resume_device);
 }
 
-static int alc_opensles_get_android_api()
-{
-	jclass androidVersionClass = NULL;
-	jfieldID androidSdkIntField = NULL;
-	int androidApiLevel = 0;
-	JNIEnv* env = NULL;
-	
-	(*javaVM)->GetEnv(javaVM, (void**)&env, JNI_VERSION_1_4);
-	androidVersionClass = (*env)->FindClass(env, "android/os/Build$VERSION");
-	if (androidVersionClass)
-	{
-		androidSdkIntField = (*env)->GetStaticFieldID(env, androidVersionClass, "SDK_INT", "I");
-		if (androidSdkIntField != NULL)
-		{
-			androidApiLevel = (int)((*env)->GetStaticIntField(env, androidVersionClass, androidSdkIntField));
-		}
-		(*env)->DeleteLocalRef(env, androidVersionClass);
-	}
-	return androidApiLevel;
-}
-
 static void alc_opensles_set_java_vm(JavaVM *vm)
 {
     // Called once and only once from JNI_OnLoad
@@ -620,6 +656,9 @@ static void alc_opensles_set_java_vm(JavaVM *vm)
 		{
 			bufferCount = 4;
 		}
+        if (strcmp(alc_opensles_get_android_model(), "Kindle Fire") == 0) {
+            bufferSize = 1024;
+        }
 	}
 }
 
