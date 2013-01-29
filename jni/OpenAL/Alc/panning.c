@@ -216,7 +216,13 @@ ALvoid aluInitPanning(ALCdevice *Device)
             SetSpeakerArrangement("layout_STEREO", SpeakerAngle, Speaker2Chan, Device->NumChan);
             break;
 
-#ifndef STEREO_ONLY
+#ifdef STEREO_ONLY
+        case DevFmtQuad:
+        case DevFmtX51:
+        case DevFmtX61:
+        case DevFmtX71:
+            break;
+#else
         case DevFmtQuad:
             Matrix[FRONT_CENTER][FRONT_LEFT]  = aluSqrt(float2ALfp(0.5));
             Matrix[FRONT_CENTER][FRONT_RIGHT] = aluSqrt(float2ALfp(0.5));
