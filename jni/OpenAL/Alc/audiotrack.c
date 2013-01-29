@@ -31,7 +31,7 @@
 
 static const ALCchar android_device[] = "Android Default";
 
-static JavaVM* javaVM = NULL;
+JavaVM* alcGetJavaVM(void);
 static JNIEnv* env;
 
 static jclass cAudioTrack = NULL;
@@ -65,6 +65,7 @@ static void* thread_function(void* arg)
     ALCdevice* device = (ALCdevice*)arg;
     AndroidData* data = (AndroidData*)device->ExtraData;
     
+    JavaVM *javaVM = alcGetJavaVM();
     (*javaVM)->AttachCurrentThread(javaVM, &env, NULL);
 
     (*env)->PushLocalFrame(env, 2);
@@ -143,6 +144,7 @@ static void* thread_function(void* arg)
 
 static ALCboolean android_open_playback(ALCdevice *device, const ALCchar *deviceName)
 {
+    JavaVM *javaVM = alcGetJavaVM();
     (*javaVM)->AttachCurrentThread(javaVM, &env, NULL);
     AndroidData* data;
     int channels;
@@ -292,10 +294,6 @@ static void alc_audiotrack_resume()
     }
 }
 
-static void alc_audiotrack_set_java_vm(JavaVM *vm)
-{
-    javaVM = vm;
-}
 
 void alc_audiotrack_init(BackendFuncs *func_list)
 {
@@ -305,13 +303,13 @@ void alc_audiotrack_init(BackendFuncs *func_list)
 		&& apportableOpenALFuncs.alc_android_set_java_vm == NULL) {
         apportableOpenALFuncs.alc_android_suspend = alc_audiotrack_suspend;
         apportableOpenALFuncs.alc_android_resume = alc_audiotrack_resume;
-        apportableOpenALFuncs.alc_android_set_java_vm = alc_audiotrack_set_java_vm;
     }
 }
 
 void alc_audiotrack_deinit(void)
 {
     /* release cached AudioTrack class */
+    JavaVM *javaVM = alcGetJavaVM();
     (*env)->DeleteGlobalRef(env, cAudioTrack);
     (*javaVM)->DetachCurrentThread(javaVM);
     cAudioTrack = NULL;

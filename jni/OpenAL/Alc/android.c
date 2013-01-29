@@ -3,11 +3,17 @@
 #include "alMain.h"
 #include "apportable_openal_funcs.h"
 
+static JavaVM *javaVM = NULL;
+JavaVM *alcGetJavaVM(void) {
+	return javaVM;
+}
+
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 	BackendFuncs func_list;
 	if (apportableOpenALFuncs.alc_android_set_java_vm) {
 		apportableOpenALFuncs.alc_android_set_java_vm(vm);
 	}
+	javaVM = vm;
 	return JNI_VERSION_1_4;
 }
 
