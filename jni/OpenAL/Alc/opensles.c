@@ -90,7 +90,7 @@ static int alc_opensles_get_android_api()
     LOGV("API:%d", androidApiLevel);
     return androidApiLevel;
 }
-static jchar *androidModel = NULL;
+static char *androidModel = NULL;
 static char *alc_opensles_get_android_model()
 {
     if (!androidModel) {
