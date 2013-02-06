@@ -136,6 +136,7 @@ static long timespecdiff(struct timespec *starttime, struct timespec *finishtime
 // Cannot be a constant because we need to tweak differently depending on OS version.
 static size_t bufferCount = 8;
 static size_t bufferSize = (1024*4);
+static size_t defaultBufferSize = (1024*4);
 #define bufferSizeMax (1024*4)
 
 typedef enum {
@@ -483,6 +484,9 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
 	SLuint32 sampling_rate = pDevice->Frequency * 1000;
 	SLresult result;
     LOGV("bits=%u, channels=%u, samples=%u, size=%u, freq=%u", bits, channels, samples, size, pDevice->Frequency);
+    if (pDevice->Frequency <= 22050) {
+        bufferSize = defaultBufferSize / 2;
+    }
 
     devState = (opesles_data_t *) pDevice->ExtraData;
 
@@ -657,6 +661,7 @@ static void alc_opensles_set_java_vm(JavaVM *vm)
 			bufferCount = 4;
 		}
         if (strcmp(alc_opensles_get_android_model(), "Kindle Fire") == 0) {
+            defaultBufferSize = 1024;
             bufferSize = 1024;
         }
 	}
