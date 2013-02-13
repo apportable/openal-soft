@@ -67,6 +67,14 @@ ifeq ($(TARGET_ARCH_ABI),armeabi)
   LOCAL_CFLAGS += -marm -DOPENAL_FIXED_POINT -DOPENAL_FIXED_POINT_SHIFT=16
 endif
 
+ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
+ifeq ($(LOCAL_ARM_NEON),true)
+LOCAL_CFLAGS += -mfloat-abi=softfp -mfpu=neon -march=armv7
+else
+LOCAL_CFLAGS += -mfloat-abi=softfp -mfpu=vfpv3-d16 -march=armv7
+endif
+endif
+
 MAX_SOURCES_LOW ?= 4
 MAX_SOURCES_START ?= 8
 MAX_SOURCES_HIGH ?= 64
