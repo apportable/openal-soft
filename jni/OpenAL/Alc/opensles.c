@@ -107,7 +107,7 @@ static char *alc_opensles_get_android_model()
         {
             androidModelField = (*env)->GetStaticFieldID(env, androidBuildClass, "MODEL", "Ljava/lang/String;");
             androidModelString = (*env)->GetStaticObjectField(env, androidBuildClass, androidModelField);
-            const jchar *unichars = (*env)->GetStringUTFChars(env, androidModelString, NULL);
+            const char *unichars = (*env)->GetStringUTFChars(env, androidModelString, NULL);
             if (!(*env)->ExceptionOccurred(env))
             {
                 jsize sz = (*env)->GetStringLength(env, androidModelString);
@@ -177,8 +177,9 @@ static pthread_mutex_t deviceListMutex = PTHREAD_MUTEX_INITIALIZER;
 typedef void (*deviceListFn)(ALCdevice *);
 
 static void devlist_add(ALCdevice *pDevice) {
+    int i;
     pthread_mutex_lock(&(deviceListMutex));
-    for (int i = 0; i < MAX_DEVICES; i++) {
+    for (i = 0; i < MAX_DEVICES; i++) {
         if (deviceList[i] == pDevice) {
             break;
         } else if (deviceList[i] == NULL) {
@@ -190,8 +191,9 @@ static void devlist_add(ALCdevice *pDevice) {
 }
 
 static void devlist_remove(ALCdevice *pDevice) {
+    int i;
     pthread_mutex_lock(&(deviceListMutex));
-    for (int i = 0; i < MAX_DEVICES; i++) {
+    for (i = 0; i < MAX_DEVICES; i++) {
         if (deviceList[i] == pDevice) {
             deviceList[i] = NULL;
         }
@@ -200,8 +202,9 @@ static void devlist_remove(ALCdevice *pDevice) {
 }
 
 static void devlist_process(deviceListFn mapFunction) {
+    int i;
     pthread_mutex_lock(&(deviceListMutex));    
-    for (int i = 0; i < MAX_DEVICES; i++) {
+    for (i = 0; i < MAX_DEVICES; i++) {
         if (deviceList[i]) {
             pthread_mutex_unlock(&(deviceListMutex));
             mapFunction(deviceList[i]);

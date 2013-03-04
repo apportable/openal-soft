@@ -35,31 +35,7 @@ LOCAL_CFLAGS    +=  -I$(ROOTDIR)/$(OPENAL_DIR) \
                     -O3 \
                     -g \
 
-ifeq ($(TARGET_ARCH_ABI),x86)
-LOCAL_CFLAGS    +=  \
-                    -DBUILD_FOUNDATION_LIB \
-                    -DTARGET_OS_android \
-                    -D__POSIX_SOURCE \
-                    -DURI_NO_UNICODE \
-                    -DURI_ENABLE_ANSI \
-                    -nostdinc \
-                    -I/$(ANDROID_NDK_ROOT)/toolchains/x86-4.4.3/prebuilt/$(HOST_OS)-$(HOST_ARCH)/lib/gcc/i686-android-linux/4.4.3/include/ \
-                    -I$(ANDROID_NDK_ROOT)/platforms/android-8/arch-x86/usr/include/ \
-
-else
-LOCAL_CFLAGS    +=  \
-                    -DBUILD_FOUNDATION_LIB \
-                    -DTARGET_OS_android \
-                    -D__POSIX_SOURCE \
-                    -DURI_NO_UNICODE \
-                    -DURI_ENABLE_ANSI \
-                    -nostdinc \
-                    -I/$(ANDROID_NDK_ROOT)/toolchains/arm-linux-androideabi-4.4.3/prebuilt/$(HOST_OS)-$(HOST_ARCH)/lib/gcc/arm-linux-androideabi/4.4.3/include/ \
-                    -I$(ANDROID_NDK_ROOT)/platforms/android-8/arch-arm/usr/include/ \
-
-endif
-
-LOCAL_LDLIBS    += --build-id -Bsymbolic -shared
+LOCAL_LDLIBS    += -Wl,--build-id -Bsymbolic -shared
 
 # Default to Fixed-point math
 ifeq ($(TARGET_ARCH_ABI),armeabi)
@@ -67,13 +43,6 @@ ifeq ($(TARGET_ARCH_ABI),armeabi)
   LOCAL_CFLAGS += -marm -DOPENAL_FIXED_POINT -DOPENAL_FIXED_POINT_SHIFT=16
 endif
 
-ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
-ifeq ($(LOCAL_ARM_NEON),true)
-LOCAL_CFLAGS += -mfloat-abi=softfp -mfpu=neon -march=armv7
-else
-LOCAL_CFLAGS += -mfloat-abi=softfp -mfpu=vfpv3-d16 -march=armv7
-endif
-endif
 
 MAX_SOURCES_LOW ?= 4
 MAX_SOURCES_START ?= 8
@@ -81,93 +50,52 @@ MAX_SOURCES_HIGH ?= 64
 LOCAL_CFLAGS += -DMAX_SOURCES_LOW=$(MAX_SOURCES_LOW) -DMAX_SOURCES_START=$(MAX_SOURCES_START) -DMAX_SOURCES_HIGH=$(MAX_SOURCES_HIGH)
 
 LOCAL_SRC_FILES :=  \
-                    Alc/android.o              \
-                    OpenAL32/alAuxEffectSlot.o \
-                    OpenAL32/alBuffer.o        \
-                    OpenAL32/alDatabuffer.o    \
-                    OpenAL32/alEffect.o        \
-                    OpenAL32/alError.o         \
-                    OpenAL32/alExtension.o     \
-                    OpenAL32/alFilter.o        \
-                    OpenAL32/alListener.o      \
-                    OpenAL32/alSource.o        \
-                    OpenAL32/alState.o         \
-                    OpenAL32/alThunk.o         \
-                    Alc/ALc.o                  \
-                    Alc/alcConfig.o            \
-                    Alc/alcEcho.o              \
-                    Alc/alcModulator.o         \
-                    Alc/alcReverb.o            \
-                    Alc/alcRing.o              \
-                    Alc/alcThread.o            \
-                    Alc/ALu.o                  \
-                    Alc/bs2b.o                 \
-                    Alc/null.o                 \
-                    Alc/panning.o              \
-                    Alc/mixer.o                \
-                    Alc/audiotrack.o           \
+                    $(OPENAL_DIR)/Alc/android.c              \
+                    $(OPENAL_DIR)/OpenAL32/alAuxEffectSlot.c \
+                    $(OPENAL_DIR)/OpenAL32/alBuffer.c        \
+                    $(OPENAL_DIR)/OpenAL32/alDatabuffer.c    \
+                    $(OPENAL_DIR)/OpenAL32/alEffect.c        \
+                    $(OPENAL_DIR)/OpenAL32/alError.c         \
+                    $(OPENAL_DIR)/OpenAL32/alExtension.c     \
+                    $(OPENAL_DIR)/OpenAL32/alFilter.c        \
+                    $(OPENAL_DIR)/OpenAL32/alListener.c      \
+                    $(OPENAL_DIR)/OpenAL32/alSource.c        \
+                    $(OPENAL_DIR)/OpenAL32/alState.c         \
+                    $(OPENAL_DIR)/OpenAL32/alThunk.c         \
+                    $(OPENAL_DIR)/Alc/ALc.c                  \
+                    $(OPENAL_DIR)/Alc/alcConfig.c            \
+                    $(OPENAL_DIR)/Alc/alcEcho.c              \
+                    $(OPENAL_DIR)/Alc/alcModulator.c         \
+                    $(OPENAL_DIR)/Alc/alcReverb.c            \
+                    $(OPENAL_DIR)/Alc/alcRing.c              \
+                    $(OPENAL_DIR)/Alc/alcThread.c            \
+                    $(OPENAL_DIR)/Alc/ALu.c                  \
+                    $(OPENAL_DIR)/Alc/bs2b.c                 \
+                    $(OPENAL_DIR)/Alc/null.c                 \
+                    $(OPENAL_DIR)/Alc/panning.c              \
+                    $(OPENAL_DIR)/Alc/mixer.c                \
+                    $(OPENAL_DIR)/Alc/audiotrack.c           \
 
-OBJECTS:=$(LOCAL_SRC_FILES)
 
 # If building for versions after FROYO
 ifeq ($(POST_FROYO), yes)
   LOCAL_CFLAGS +=   -DPOST_FROYO -I$(ANDROID_NDK_ROOT)/platforms/android-9/arch-arm/usr/include/
   LOCAL_LDLIBS += -ldl -L$(ANDROID_NDK_ROOT)/platforms/android-9/arch-arm/usr/lib/
-  LOCAL_SRC_FILES += Alc/opensles.o
+  LOCAL_SRC_FILES += $(OPENAL_DIR)/Alc/opensles.c
 endif
 
-ifeq ($(TARGET_ARCH_ABI),x86)
-  CC= /Developer/DestinyCloudFist/clang-$(CLANG_VERSION)/bin/clang --sysroot=$(ANDROID_NDK_ROOT)/platforms/android-8/arch-x86 $(CXX_SYSTEM) -ccc-host-triple i686-android-linux -march=i386 -D__compiler_offsetof=__builtin_offsetof
-  CCAS=$(ANDROID_NDK_ROOT)/toolchains/x86-4.4.3/prebuilt/$(HOST_OS)-$(HOST_ARCH)/bin/i686-android-linux-gcc
-else
-ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
-  CC= /Developer/DestinyCloudFist/clang-$(CLANG_VERSION)/bin/clang --sysroot=$(ANDROID_NDK_ROOT)/platforms/android-8/arch-arm $(CXX_SYSTEM) -ccc-host-triple arm-android-eabi-v7a  -march=armv7a -mfloat-abi=softfp -mfpu=vfp -D__compiler_offsetof=__builtin_offsetof
-  CCAS=$(ANDROID_NDK_ROOT)/toolchains/arm-linux-androideabi-4.6/prebuilt/$(HOST_OS)-$(HOST_ARCH)/bin/arm-linux-androideabi-gcc
-else
-  CC= /Developer/DestinyCloudFist/clang-$(CLANG_VERSION)/bin/clang --sysroot=$(ANDROID_NDK_ROOT)/platforms/android-8/arch-arm $(CXX_SYSTEM) -ccc-host-triple arm-android-eabi -march=armv5 -D__compiler_offsetof=__builtin_offsetof
-  CCAS=$(ANDROID_NDK_ROOT)/toolchains/arm-linux-androideabi-4.4.3/prebuilt/$(HOST_OS)-$(HOST_ARCH)/bin/arm-linux-androideabi-gcc
-endif
-endif
-
-OBJDIR = $(BINDIR)/$(MODULE_DST)
-
-MODULE_CFLAGS := $(COMMON_CFLAGS) $(CFLAGS) $(LOCAL_CFLAGS)
-
-DEBUG_LOGGING_FLAGS ?= -DDEBUG_LOG\(...\)=do\{\}while\(0\)\; -DDEBUG_BREAK\(\)=do\{\}while\(0\)\; -DRELEASE_LOG\(...\)=do\{\}while\(0\);
-
-ifneq ("$(ANALYZE)", "yes")
-# Start Compile Rules
 
 
-$(OBJDIR)/%.out.s: $(ROOTDIR)/$(MODULE)/%.c
-	@echo Compiling .c $<
-	@mkdir -p $(dir $@)
-	@$(CC)  $(MODULE_CFLAGS) $(MODULE_CCFLAGS) $(DEBUG_LOGGING_FLAGS) -S $< -o $@
 
-$(OBJDIR)/%.fixed.s: $(OBJDIR)/%.out.s
-	@echo fixing $<
-	@perl fixup_assembly.pl < $< > $@
 
-$(OBJDIR)/%.o: $(OBJDIR)/%.fixed.s
-	@echo assembling $<
-	@$(CCAS) $(MODULE_ASFLAGS) -c $< -o $@
 
-$(OBJDIR)/%.o: $(ROOTDIR)/$(MODULE)/%.s
-	@echo Assembling $<
-	@mkdir -p $(dir $@)
-	@$(CC) $(MODULE_ASFLAGS) -c $< -o $@
 
-# End Compile Rules
-else
-# Start Analyze Rules
 
-$(OBJDIR)/%.o: $(ROOTDIR)/$(MODULE)/%.c
-	@echo Analyzing $<
-	@mkdir -p `echo $@ | sed s/[^/]*[.]o$$//`
-	@$(CC) $(MODULE_CFLAGS) $(MODULE_CCFLAGS) $(DEBUG_LOGGING_FLAGS) -S --analyze $< -o /dev/null 2>> $(ANALYZE_OUTPUT)
 
-# End Analyze Rules
-endif
+
+
+
+
 
 include $(BUILD_SHARED_LIBRARY)
 
