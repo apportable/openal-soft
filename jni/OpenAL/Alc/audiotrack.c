@@ -46,6 +46,7 @@ static jmethodID mWrite;
 
 static int suspended = 0;
 static int audioTrackPlaying = 0;
+static int audioTrackWasPlaying = 0;
 
 typedef struct
 {
@@ -283,14 +284,19 @@ static const BackendFuncs android_funcs = {
 static void alc_audiotrack_suspend()
 {
     suspended = 1;
+    audioTrackWasPlaying = audioTrackPlaying;
 }
 
 static void alc_audiotrack_resume()
 {
     suspended = 0;
-    while (!audioTrackPlaying)
+    if (audioTrackWasPlaying)
     {
-        sched_yield();
+        while (!audioTrackPlaying)
+        {
+            sched_yield();
+        }
+        audioTrackWasPlaying = 0;
     }
 }
 
