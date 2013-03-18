@@ -650,6 +650,26 @@ static void alc_opensles_set_java_vm(JavaVM *vm)
 {
     // Called once and only once from JNI_OnLoad
     javaVM = vm;
+    int i;
+    char *android_model;
+    char *low_buffer_models[] = {
+        "GT-I9300",
+        "GT-I9305",
+        "SHV-E210",
+        "SGH-T999",
+        "SGH-I747",
+        "SGH-N064",
+        "SC-06D",
+        "SGH-N035",
+        "SC-03E",
+        "SCH-R530",
+        "SCH-I535",
+        "SPH-L710",
+        "GT-I9308",
+        "SCH-I939",
+        "Kindle Fire",
+        NULL};
+
 	if(NULL != javaVM)
 	{
 		int android_os_version = alc_opensles_get_android_api();
@@ -663,9 +683,14 @@ static void alc_opensles_set_java_vm(JavaVM *vm)
 		{
 			bufferCount = 4;
 		}
-        if (strcmp(alc_opensles_get_android_model(), "Kindle Fire") == 0) {
-            defaultBufferSize = 1024;
-            bufferSize = 1024;
+        android_model = alc_opensles_get_android_model();
+        for (i = 0; low_buffer_models[i] != NULL; i++) {
+            if (strncmp(android_model, low_buffer_models[i], strlen(low_buffer_models[i])) == 0) {
+                LOGV("Using less buffering");
+                defaultBufferSize = 1024;
+                bufferSize = 1024;
+                break;
+            }
         }
 	}
 }
