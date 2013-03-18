@@ -1,4 +1,8 @@
-LOCAL_PATH := $(call my-dir)
+ifeq ("$(ROOTDIR)","")
+    LOCAL_PATH := $(call my-dir)
+else
+    LOCAL_PATH := $(ROOTDIR)
+endif
 
 ANALYZE      ?= no
 ANALYZE_OUTPUT?=/dev/null
