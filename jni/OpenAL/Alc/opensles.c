@@ -137,6 +137,7 @@ static long timespecdiff(struct timespec *starttime, struct timespec *finishtime
 static size_t bufferCount = 8;
 static size_t bufferSize = (1024*4);
 static size_t defaultBufferSize = (1024*4);
+static size_t premixCount = 3;
 #define bufferSizeMax (1024*4)
 
 typedef enum {
@@ -247,18 +248,13 @@ static void *playback_function(void * context) {
                 pthread_mutex_unlock(&(buffer->mutex));
                 return NULL;
             }
-            if (buffer->state == OUTPUT_BUFFER_STATE_FREE)
-                break;
 
-            // This is a little hacky, but here we avoid using a buffer too soon after it is enqueued
-            if (buffer->state == OUTPUT_BUFFER_STATE_ENQUEUED) {
-                outputBuffer_t *buffer1 = &(devState->outputBuffers[(bufferIndex + 1) % bufferCount]);
-                outputBuffer_t *buffer2 = &(devState->outputBuffers[(bufferIndex + 2) % bufferCount]);
-                outputBuffer_t *buffer3 = &(devState->outputBuffers[(bufferIndex + 3) % bufferCount]);
-                if (buffer1->state == OUTPUT_BUFFER_STATE_ENQUEUED &&
-                    buffer2->state == OUTPUT_BUFFER_STATE_ENQUEUED &&
-                    buffer3->state == OUTPUT_BUFFER_STATE_ENQUEUED) {
-                    buffer->state = OUTPUT_BUFFER_STATE_FREE;
+            // This is a little hacky, but here we avoid mixing too much data            
+            if (buffer->state == OUTPUT_BUFFER_STATE_FREE) {
+                int i = (bufferIndex - premixCount) % bufferCount;
+                outputBuffer_t *buffer1 = &(devState->outputBuffers[i]);
+                if (buffer1->state == OUTPUT_BUFFER_STATE_ENQUEUED ||
+                    buffer1->state == OUTPUT_BUFFER_STATE_FREE) {
                     break;
                 }
             } 
@@ -362,6 +358,7 @@ static void opensles_callback(SLAndroidSimpleBufferQueueItf bq, void *context)
     ALCdevice *pDevice = (ALCdevice *) context;
     opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
     unsigned int bufferIndex = devState->lastBufferEnqueued;
+    unsigned int i;
     struct timespec ts;
     int rc;
     SLresult result;
@@ -371,6 +368,15 @@ static void opensles_callback(SLAndroidSimpleBufferQueueItf bq, void *context)
     buffer = &(devState->outputBuffers[bufferIndex]);
 
     pthread_mutex_lock(&(buffer->mutex));
+    // We will block until 'next' buffer has mixed audio, but first flag oldest equeued buffer as free 
+    for (i = 1; i <= bufferCount; i++) {
+        unsigned int j = (devState->lastBufferEnqueued+i) % bufferCount;
+        outputBuffer_t *bufferFree = &(devState->outputBuffers[j]);
+        if (bufferFree->state == OUTPUT_BUFFER_STATE_ENQUEUED) {
+            bufferFree->state = OUTPUT_BUFFER_STATE_FREE;
+            break;
+        } 
+    }
     while (buffer->state != OUTPUT_BUFFER_STATE_MIXED) {
         clock_gettime(CLOCK_REALTIME, &ts);
         ts.tv_nsec += 100000;
@@ -676,12 +682,12 @@ static void alc_opensles_set_java_vm(JavaVM *vm)
 		// If running on 4.1 (Jellybean) or later, use 8 buffers to avoid breakup/stuttering.
 		if(android_os_version >= 16)
 		{
-			bufferCount = 8;
+			premixCount = 5;
 		}
 		// Else, use 4 buffers to reduce latency
 		else
 		{
-			bufferCount = 4;
+			premixCount = 1;
 		}
         android_model = alc_opensles_get_android_model();
         for (i = 0; low_buffer_models[i] != NULL; i++) {
@@ -689,6 +695,7 @@ static void alc_opensles_set_java_vm(JavaVM *vm)
                 LOGV("Using less buffering");
                 defaultBufferSize = 1024;
                 bufferSize = 1024;
+                premixCount = 1;
                 break;
             }
         }
