@@ -176,6 +176,10 @@ static const ALenums enumeration[] = {
     { "AL_EXPONENT_DISTANCE",                 AL_EXPONENT_DISTANCE                },
     { "AL_EXPONENT_DISTANCE_CLAMPED",         AL_EXPONENT_DISTANCE_CLAMPED        },
 
+    // Apportable Extensions
+    { "AL_PRIORITY",                          AL_PRIORITY                         },
+    { "AL_PRIORITY_SLOTS",                    AL_PRIORITY_SLOTS                   },
+
     // Filter types
     { "AL_FILTER_TYPE",                       AL_FILTER_TYPE                      },
     { "AL_FILTER_NULL",                       AL_FILTER_NULL                      },

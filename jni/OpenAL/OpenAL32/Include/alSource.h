@@ -52,6 +52,9 @@ typedef struct ALsource
     ALboolean    bLooping;
     ALenum       DistanceModel;
 
+    // Apportably Extension
+    ALuint    priority;
+
     resampler_t  Resampler;
 
     ALenum       state;

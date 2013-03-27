@@ -452,6 +452,15 @@ typedef void ALvoid;
 #define AL_EXPONENT_DISTANCE                      0xD005
 #define AL_EXPONENT_DISTANCE_CLAMPED              0xD006
 
+/**
+ * Priority
+ *
+ * Apportable Extension.
+ * Used to prevent dynamic throttling of this source.
+ *
+ */
+#define AL_PRIORITY                               0xE001
+#define AL_PRIORITY_SLOTS                         0xE002
 /*
  * Renderer State management
  */

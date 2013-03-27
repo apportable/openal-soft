@@ -449,6 +449,9 @@ struct ALCcontext_struct
     ALsizei           ActiveSourceCount;
     ALsizei           MaxActiveSources;
 
+    // Apportable Extension
+    ALsizei           PrioritySlots;
+
     ALCdevice  *Device;
     const ALCchar *ExtensionList;
 

@@ -1193,6 +1193,7 @@ static ALvoid InitContext(ALCcontext *pContext)
     pContext->DopplerFactor = int2ALfp(1);
     pContext->DopplerVelocity = int2ALfp(1);
     pContext->flSpeedOfSound = float2ALfp(SPEEDOFSOUNDMETRESPERSEC);
+    pContext->PrioritySlots = 0;
 
     pContext->ExtensionList = alExtList;
 }

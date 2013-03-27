@@ -695,6 +695,10 @@ AL_API ALvoid AL_APIENTRY alSourcei(ALuint source,ALenum eParam,ALint lValue)
                     alSetError(pContext, AL_INVALID_VALUE);
                 break;
 
+            case AL_PRIORITY:
+                Source->priority = lValue;
+                break;
+
             default:
                 alSetError(pContext, AL_INVALID_ENUM);
                 break;
@@ -1307,17 +1311,6 @@ AL_API ALvoid AL_APIENTRY alSourcePlayv(ALsizei n, const ALuint *sources)
         }
     }
 
-#ifdef MAX_SOURCES_LOW
-    // Apportable: Cap the number of active source that are playing
-    if (Context->ActiveSourceCount + n > alc_max_sources) {
-        LOGV("Skipping starting some sources due to lack of CPU time");
-    	if (Context->ActiveSourceCount > alc_max_sources) {
-    		n = 0;
-    	} else {
-    		n = alc_max_sources - Context->ActiveSourceCount;
-    	}
-    }
-#endif
     
     while(Context->MaxActiveSources-Context->ActiveSourceCount < n)
     {
@@ -1338,15 +1331,17 @@ AL_API ALvoid AL_APIENTRY alSourcePlayv(ALsizei n, const ALuint *sources)
         Context->MaxActiveSources = newcount;
     }
 
-#ifdef MAX_SOURCES_LOW
-    //Apportable Need to give the ALC platform code a hint for setting Source limit based on performance
-    // LOGI("Playing %d/%d ActiveSources", Context->ActiveSourceCount, alc_max_sources);
-    alc_active_sources = Context->ActiveSourceCount;
-#endif
     
     for(i = 0;i < n;i++)
     {
         Source = (ALsource*)ALTHUNK_LOOKUPENTRY(sources[i]);
+
+#ifdef MAX_SOURCES_LOW
+        if (Context->ActiveSourceCount >= (alc_max_sources - Context->PrioritySlots) && Source->priority < 127) {
+            LOGV("Skipping starting source %d due to lack of CPU time.", sources[i]);
+            continue;
+        }
+#endif
 
         // Check that there is a queue containing at least one non-null, non zero length AL Buffer
         BufferList = Source->queue;
@@ -1402,6 +1397,11 @@ AL_API ALvoid AL_APIENTRY alSourcePlayv(ALsizei n, const ALuint *sources)
                 Context->ActiveSources[Context->ActiveSourceCount++] = Source;
         }
     }
+
+#ifdef MAX_SOURCES_LOW
+    //Apportable Need to give the ALC platform code a hint for setting Source limit based on performance
+    alc_active_sources = Context->ActiveSourceCount;
+#endif
 
 done:
     ProcessContext(Context);
@@ -1813,6 +1813,7 @@ static ALvoid InitSourceParams(ALsource *Source)
     Source->NeedsUpdate = AL_TRUE;
 
     Source->Buffer = NULL;
+    Source->priority = 0;
 }
 
 
