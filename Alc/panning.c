@@ -204,19 +204,19 @@ ALvoid ComputeAngleGains(const ALCdevice *device, ALfloat angle, ALfloat hwidth,
         if(angle > 0.0f)
         {
             ALuint done = 0;
-            ALuint i = 0;
-            while(i < device->NumChan && device->SpeakerAngle[i]-angle < -F_PI)
-                i++;
-            for(done = 0;i < device->NumChan;done++)
+            ALuint i2 = 0;
+            while(i2 < device->NumChan && device->SpeakerAngle[i2]-angle < -F_PI)
+                i2++;
+            for(done = 0;i2 < device->NumChan;done++)
             {
-                SpeakerAngle[done] = device->SpeakerAngle[i]-angle;
-                Speaker2Chan[done] = device->Speaker2Chan[i];
-                i++;
+                SpeakerAngle[done] = device->SpeakerAngle[i2]-angle;
+                Speaker2Chan[done] = device->Speaker2Chan[i2];
+                i2++;
             }
-            for(i = 0;done < device->NumChan;i++)
+            for(i2 = 0;done < device->NumChan;i2++)
             {
-                SpeakerAngle[done] = device->SpeakerAngle[i]-angle + F_PI*2.0f;
-                Speaker2Chan[done] = device->Speaker2Chan[i];
+                SpeakerAngle[done] = device->SpeakerAngle[i2]-angle + F_PI*2.0f;
+                Speaker2Chan[done] = device->Speaker2Chan[i2];
                 done++;
             }
         }
@@ -227,19 +227,19 @@ ALvoid ComputeAngleGains(const ALCdevice *device, ALfloat angle, ALfloat hwidth,
              * they'll underflow and wrap to become 0xFFFFFFFF, which will
              * break as expected. */
             ALuint done = device->NumChan-1;
-            ALuint i = device->NumChan-1;
-            while(i < device->NumChan && device->SpeakerAngle[i]-angle > F_PI)
-                i--;
-            for(done = device->NumChan-1;i < device->NumChan;done--)
+            ALuint i2 = device->NumChan-1;
+            while(i2 < device->NumChan && device->SpeakerAngle[i2]-angle > F_PI)
+                i2--;
+            for(done = device->NumChan-1;i2 < device->NumChan;done--)
             {
-                SpeakerAngle[done] = device->SpeakerAngle[i]-angle;
-                Speaker2Chan[done] = device->Speaker2Chan[i];
-                i--;
+                SpeakerAngle[done] = device->SpeakerAngle[i2]-angle;
+                Speaker2Chan[done] = device->Speaker2Chan[i2];
+                i2--;
             }
-            for(i = device->NumChan-1;done < device->NumChan;i--)
+            for(i2 = device->NumChan-1;done < device->NumChan;i2--)
             {
-                SpeakerAngle[done] = device->SpeakerAngle[i]-angle - F_PI*2.0f;
-                Speaker2Chan[done] = device->Speaker2Chan[i];
+                SpeakerAngle[done] = device->SpeakerAngle[i2]-angle - F_PI*2.0f;
+                Speaker2Chan[done] = device->Speaker2Chan[i2];
                 done--;
             }
         }

@@ -920,7 +920,7 @@ static void alc_initconfig(void)
     if(((devs=getenv("ALSOFT_DRIVERS")) && devs[0]) ||
        ConfigValueStr(NULL, "drivers", &devs))
     {
-        int n;
+        int n2;
         size_t len;
         const char *next = devs;
         int endlist, delitem;
@@ -941,27 +941,27 @@ static void alc_initconfig(void)
             endlist = 1;
 
             len = (next ? ((size_t)(next-devs)) : strlen(devs));
-            for(n = i;BackendList[n].Init;n++)
+            for(n2 = i;BackendList[n2].Init;n2++)
             {
-                if(len == strlen(BackendList[n].name) &&
-                   strncmp(BackendList[n].name, devs, len) == 0)
+                if(len == strlen(BackendList[n2].name) &&
+                   strncmp(BackendList[n2].name, devs, len) == 0)
                 {
                     if(delitem)
                     {
                         do {
-                            BackendList[n] = BackendList[n+1];
-                            ++n;
-                        } while(BackendList[n].Init);
+                            BackendList[n2] = BackendList[n2+1];
+                            ++n2;
+                        } while(BackendList[n2].Init);
                     }
                     else
                     {
-                        struct BackendInfo Bkp = BackendList[n];
-                        while(n > i)
+                        struct BackendInfo Bkp = BackendList[n2];
+                        while(n2 > i)
                         {
-                            BackendList[n] = BackendList[n-1];
-                            --n;
+                            BackendList[n2] = BackendList[n2-1];
+                            --n2;
                         }
-                        BackendList[n] = Bkp;
+                        BackendList[n2] = Bkp;
 
                         i++;
                     }

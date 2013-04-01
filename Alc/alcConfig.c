@@ -74,35 +74,35 @@ static void LoadConfigFromFile(FILE *f)
         if(buffer[0] == '[')
         {
             ConfigBlock *nextBlock;
-            unsigned int i;
+            unsigned int i2;
 
-            i = 1;
-            while(buffer[i] && buffer[i] != ']')
-                i++;
+            i2 = 1;
+            while(buffer[i2] && buffer[i2] != ']')
+                i2++;
 
-            if(!buffer[i])
+            if(!buffer[i2])
             {
                  ERR("config parse error: bad line \"%s\"\n", buffer);
                  continue;
             }
-            buffer[i] = 0;
+            buffer[i2] = 0;
 
             do {
-                i++;
-                if(buffer[i] && !isspace(buffer[i]))
+                i2++;
+                if(buffer[i2] && !isspace(buffer[i2]))
                 {
-                    if(buffer[i] != '#')
-                        WARN("config warning: extra data after block: \"%s\"\n", buffer+i);
+                    if(buffer[i2] != '#')
+                        WARN("config warning: extra data after block: \"%s\"\n", buffer+i2);
                     break;
                 }
-            } while(buffer[i]);
+            } while(buffer[i2]);
 
             nextBlock = NULL;
-            for(i = 0;i < cfgCount;i++)
+            for(i2 = 0;i2 < cfgCount;i2++)
             {
-                if(strcasecmp(cfgBlocks[i].name, buffer+1) == 0)
+                if(strcasecmp(cfgBlocks[i2].name, buffer+1) == 0)
                 {
-                    nextBlock = cfgBlocks+i;
+                    nextBlock = cfgBlocks+i2;
                     TRACE("found block '%s'\n", nextBlock->name);
                     break;
                 }
