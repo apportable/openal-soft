@@ -446,6 +446,9 @@ void *GetSymbol(void *handle, const char *name)
 #endif
 #endif
 
+#ifdef ANDROID
+#include <android/log.h>
+#endif
 
 void al_print(const char *type, const char *func, const char *fmt, ...)
 {
@@ -462,8 +465,12 @@ void al_print(const char *type, const char *func, const char *fmt, ...)
     }
     str[sizeof(str)-1] = 0;
 
+#ifdef ANDROID
+    __android_log_print(ANDROID_LOG_INFO, "OpenAL", "%s", str);
+#else
     fprintf(LogFile, "%s", str);
     fflush(LogFile);
+#endif
 }
 
 
