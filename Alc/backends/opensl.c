@@ -14,436 +14,835 @@
  * limitations under the License.
  */
 
-/* This is an OpenAL backend for Android using the native audio APIs based on
- * OpenSL ES 1.0.1. It is based on source code for the native-audio sample app
- * bundled with NDK.
+/* This is an OpenAL backend for Android using the native audio APIs based on OpenSL ES 1.0.1.
+ * It is based on source code for the native-audio sample app bundled with NDK.
  */
 
 #include "config.h"
 
 #include <stdlib.h>
+#include <time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <dlfcn.h>
 
 #include "alMain.h"
+#include "AL/al.h"
+#include "AL/alc.h"
 #include "alu.h"
 
+#include <pthread.h>
+#include <sched.h>
+#include <sys/prctl.h>
 
-#include <SLES/OpenSLES.h>
+#include <jni.h>
+
+static const ALCchar opensl_device[] = "opensl";
+
+#define LOG_NDEBUG 0
+#undef LOG_TAG
+#define LOG_TAG "OpenAL_SLES"
+
 #if 1
-#include <SLES/OpenSLES_Android.h>
+#define LOGV(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #else
-extern SLAPIENTRY const SLInterfaceID SL_IID_ANDROIDSIMPLEBUFFERQUEUE;
-
-struct SLAndroidSimpleBufferQueueItf_;
-typedef const struct SLAndroidSimpleBufferQueueItf_ * const * SLAndroidSimpleBufferQueueItf;
-
-typedef void (*slAndroidSimpleBufferQueueCallback)(SLAndroidSimpleBufferQueueItf caller, void *pContext);
-
-typedef struct SLAndroidSimpleBufferQueueState_ {
-    SLuint32 count;
-    SLuint32 index;
-} SLAndroidSimpleBufferQueueState;
-
-
-struct SLAndroidSimpleBufferQueueItf_ {
-    SLresult (*Enqueue) (
-        SLAndroidSimpleBufferQueueItf self,
-        const void *pBuffer,
-        SLuint32 size
-    );
-    SLresult (*Clear) (
-        SLAndroidSimpleBufferQueueItf self
-    );
-    SLresult (*GetState) (
-        SLAndroidSimpleBufferQueueItf self,
-        SLAndroidSimpleBufferQueueState *pState
-    );
-    SLresult (*RegisterCallback) (
-        SLAndroidSimpleBufferQueueItf self,
-        slAndroidSimpleBufferQueueCallback callback,
-        void* pContext
-    );
-};
-
-#define SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE ((SLuint32) 0x800007BD)
-
-typedef struct SLDataLocator_AndroidSimpleBufferQueue {
-    SLuint32 locatorType;
-    SLuint32 numBuffers;
-} SLDataLocator_AndroidSimpleBufferQueue;
-
+#define LOGV(...)
 #endif
 
-/* Helper macros */
-#define SLObjectItf_Realize(a,b)        ((*(a))->Realize((a),(b)))
-#define SLObjectItf_GetInterface(a,b,c) ((*(a))->GetInterface((a),(b),(c)))
-#define SLObjectItf_Destroy(a)          ((*(a))->Destroy((a)))
+// for native audio
+#include <SLES/OpenSLES.h>
+#include <SLES/OpenSLES_Android.h>
 
-#define SLEngineItf_CreateOutputMix(a,b,c,d,e)       ((*(a))->CreateOutputMix((a),(b),(c),(d),(e)))
-#define SLEngineItf_CreateAudioPlayer(a,b,c,d,e,f,g) ((*(a))->CreateAudioPlayer((a),(b),(c),(d),(e),(f),(g)))
+#include "android_openal_funcs.h"
 
-#define SLPlayItf_SetPlayState(a,b) ((*(a))->SetPlayState((a),(b)))
+#define MAKE_SYM_POINTER(sym) static typeof(sym) * p##sym = NULL
+MAKE_SYM_POINTER(SL_IID_ENGINE);
+MAKE_SYM_POINTER(SL_IID_ANDROIDSIMPLEBUFFERQUEUE);
+MAKE_SYM_POINTER(SL_IID_PLAY);
+MAKE_SYM_POINTER(SL_IID_BUFFERQUEUE);
+MAKE_SYM_POINTER(slCreateEngine);
+
+// engine interfaces
+static SLObjectItf engineObject = NULL;
+static SLEngineItf engineEngine;
+
+// output mix interfaces
+static SLObjectItf outputMixObject = NULL;
+
+// JNI stuff so we can get the runtime OS version number
+static JavaVM* javaVM = NULL;
+
+static int alc_opensl_get_android_api()
+{
+    jclass androidVersionClass = NULL;
+    jfieldID androidSdkIntField = NULL;
+    int androidApiLevel = 0;
+    JNIEnv* env = NULL;
+
+    (*javaVM)->GetEnv(javaVM, (void**)&env, JNI_VERSION_1_4);
+    androidVersionClass = (*env)->FindClass(env, "android/os/Build$VERSION");
+    if (androidVersionClass)
+    {
+        androidSdkIntField = (*env)->GetStaticFieldID(env, androidVersionClass, "SDK_INT", "I");
+        if (androidSdkIntField != NULL)
+        {
+            androidApiLevel = (int)((*env)->GetStaticIntField(env, androidVersionClass, androidSdkIntField));
+        }
+        (*env)->DeleteLocalRef(env, androidVersionClass);
+    }
+    LOGV("API:%d", androidApiLevel);
+    return androidApiLevel;
+}
+static char *androidModel = NULL;
+static char *alc_opensl_get_android_model()
+{
+    if (!androidModel) {
+        jclass androidBuildClass = NULL;
+        jfieldID androidModelField = NULL;
+        jstring androidModelString = NULL;
+        int androidApiLevel = 0;
+        JNIEnv* env = NULL;
+
+        (*javaVM)->GetEnv(javaVM, (void**)&env, JNI_VERSION_1_4);
+        (*env)->PushLocalFrame(env, 5);
+        androidBuildClass = (*env)->FindClass(env, "android/os/Build");
+        if (androidBuildClass)
+        {
+            androidModelField = (*env)->GetStaticFieldID(env, androidBuildClass, "MODEL", "Ljava/lang/String;");
+            androidModelString = (*env)->GetStaticObjectField(env, androidBuildClass, androidModelField);
+            const char *unichars = (*env)->GetStringUTFChars(env, androidModelString, NULL);
+            if (!(*env)->ExceptionOccurred(env))
+            {
+                jsize sz = (*env)->GetStringLength(env, androidModelString);
+                androidModel = malloc(sz+1);
+                if (androidModel) {
+                    strncpy(androidModel, unichars, sz);
+                    androidModel[sz] = '\0';
+                }
+            }
+            (*env)->ReleaseStringUTFChars(env, androidModelString, unichars);
+        }
+        (*env)->PopLocalFrame(env, NULL);
+    }
+    LOGV("Model:%s", androidModel);
+    return androidModel;
+}
+
+static long timespecdiff(struct timespec *starttime, struct timespec *finishtime)
+{
+  long msec;
+  msec=(finishtime->tv_sec-starttime->tv_sec)*1000;
+  msec+=(finishtime->tv_nsec-starttime->tv_nsec)/1000000;
+  return msec;
+ }
+
+// Cannot be a constant because we need to tweak differently depending on OS version.
+static size_t bufferCount = 8;
+static size_t bufferSize = (1024*4);
+static size_t defaultBufferSize = (1024*4);
+static size_t premixCount = 3;
+#define bufferSizeMax (1024*4)
+
+typedef enum {
+    OUTPUT_BUFFER_STATE_UNKNOWN,
+    OUTPUT_BUFFER_STATE_FREE,
+    OUTPUT_BUFFER_STATE_MIXED,
+    OUTPUT_BUFFER_STATE_ENQUEUED,
+} outputBuffer_state_t;
+
+typedef struct outputBuffer_s {
+    pthread_mutex_t mutex;
+    pthread_cond_t  cond;
+    outputBuffer_state_t state;
+    char buffer[bufferSizeMax];
+} outputBuffer_t;
+
+// Will dynamically create the number of buffers (array elements) based on OS version.
 
 
 typedef struct {
-    /* engine interfaces */
-    SLObjectItf engineObject;
-    SLEngineItf engine;
+    pthread_t playbackThread;
+    char threadShouldRun;
+    char threadIsReady;
+    char lastBufferEnqueued;
+    char lastBufferMixed;
 
-    /* output mix interfaces */
-    SLObjectItf outputMix;
+    outputBuffer_t *outputBuffers;
 
-    /* buffer queue player interfaces */
-    SLObjectItf bufferQueueObject;
+    // buffer queue player interfaces
+    SLObjectItf bqPlayerObject;
+    SLPlayItf bqPlayerPlay;
+    SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue;
+} opesles_data_t;
+#define MAX_DEVICES 3
+static ALCdevice *deviceList[MAX_DEVICES] = {NULL};
+static pthread_mutex_t deviceListMutex = PTHREAD_MUTEX_INITIALIZER;
 
-    void *buffer;
-    ALuint bufferSize;
+typedef void (*deviceListFn)(ALCdevice *);
 
-    ALuint frameSize;
-} osl_data;
-
-
-static const ALCchar opensl_device[] = "OpenSL";
-
-
-static SLuint32 GetChannelMask(enum DevFmtChannels chans)
-{
-    switch(chans)
-    {
-        case DevFmtMono: return SL_SPEAKER_FRONT_CENTER;
-        case DevFmtStereo: return SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT;
-        case DevFmtQuad: return SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT|
-                                SL_SPEAKER_BACK_LEFT|SL_SPEAKER_BACK_RIGHT;
-        case DevFmtX51: return SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT|
-                               SL_SPEAKER_FRONT_CENTER|SL_SPEAKER_LOW_FREQUENCY|
-                               SL_SPEAKER_BACK_LEFT|SL_SPEAKER_BACK_RIGHT;
-        case DevFmtX61: return SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT|
-                               SL_SPEAKER_FRONT_CENTER|SL_SPEAKER_LOW_FREQUENCY|
-                               SL_SPEAKER_BACK_CENTER|
-                               SL_SPEAKER_SIDE_LEFT|SL_SPEAKER_SIDE_RIGHT;
-        case DevFmtX71: return SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT|
-                               SL_SPEAKER_FRONT_CENTER|SL_SPEAKER_LOW_FREQUENCY|
-                               SL_SPEAKER_BACK_LEFT|SL_SPEAKER_BACK_RIGHT|
-                               SL_SPEAKER_SIDE_LEFT|SL_SPEAKER_SIDE_RIGHT;
-        case DevFmtX51Side: return SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT|
-                                   SL_SPEAKER_FRONT_CENTER|SL_SPEAKER_LOW_FREQUENCY|
-                                   SL_SPEAKER_SIDE_LEFT|SL_SPEAKER_SIDE_RIGHT;
+static void devlist_add(ALCdevice *pDevice) {
+    int i;
+    pthread_mutex_lock(&(deviceListMutex));
+    for (i = 0; i < MAX_DEVICES; i++) {
+        if (deviceList[i] == pDevice) {
+            break;
+        } else if (deviceList[i] == NULL) {
+            deviceList[i] = pDevice;
+            break;
+        }
     }
-    return 0;
+    pthread_mutex_unlock(&(deviceListMutex));
 }
 
-static const char *res_str(SLresult result)
-{
-    switch(result)
-    {
-        case SL_RESULT_SUCCESS: return "Success";
-        case SL_RESULT_PRECONDITIONS_VIOLATED: return "Preconditions violated";
-        case SL_RESULT_PARAMETER_INVALID: return "Parameter invalid";
-        case SL_RESULT_MEMORY_FAILURE: return "Memory failure";
-        case SL_RESULT_RESOURCE_ERROR: return "Resource error";
-        case SL_RESULT_RESOURCE_LOST: return "Resource lost";
-        case SL_RESULT_IO_ERROR: return "I/O error";
-        case SL_RESULT_BUFFER_INSUFFICIENT: return "Buffer insufficient";
-        case SL_RESULT_CONTENT_CORRUPTED: return "Content corrupted";
-        case SL_RESULT_CONTENT_UNSUPPORTED: return "Content unsupported";
-        case SL_RESULT_CONTENT_NOT_FOUND: return "Content not found";
-        case SL_RESULT_PERMISSION_DENIED: return "Permission denied";
-        case SL_RESULT_FEATURE_UNSUPPORTED: return "Feature unsupported";
-        case SL_RESULT_INTERNAL_ERROR: return "Internal error";
-        case SL_RESULT_UNKNOWN_ERROR: return "Unknown error";
-        case SL_RESULT_OPERATION_ABORTED: return "Operation aborted";
-        case SL_RESULT_CONTROL_LOST: return "Control lost";
-#ifdef SL_RESULT_READONLY
-        case SL_RESULT_READONLY: return "ReadOnly";
-#endif
-#ifdef SL_RESULT_ENGINEOPTION_UNSUPPORTED
-        case SL_RESULT_ENGINEOPTION_UNSUPPORTED: return "Engine option unsupported";
-#endif
-#ifdef SL_RESULT_SOURCE_SINK_INCOMPATIBLE
-        case SL_RESULT_SOURCE_SINK_INCOMPATIBLE: return "Source/Sink incompatible";
-#endif
+static void devlist_remove(ALCdevice *pDevice) {
+    int i;
+    pthread_mutex_lock(&(deviceListMutex));
+    for (i = 0; i < MAX_DEVICES; i++) {
+        if (deviceList[i] == pDevice) {
+            deviceList[i] = NULL;
+        }
     }
-    return "Unknown error code";
+    pthread_mutex_unlock(&(deviceListMutex));
 }
 
-#define PRINTERR(x, s) do {                                                      \
-    if((x) != SL_RESULT_SUCCESS)                                                 \
-        ERR("%s: %s\n", (s), res_str((x)));                                      \
-} while(0)
-
-/* this callback handler is called every time a buffer finishes playing */
-static void opensl_callback(SLAndroidSimpleBufferQueueItf bq, void *context)
-{
-    ALCdevice *Device = context;
-    osl_data *data = Device->ExtraData;
-    SLresult result;
-
-    aluMixData(Device, data->buffer, data->bufferSize/data->frameSize);
-
-    result = (*bq)->Enqueue(bq, data->buffer, data->bufferSize);
-    PRINTERR(result, "bq->Enqueue");
+static void devlist_process(deviceListFn mapFunction) {
+    int i;
+    pthread_mutex_lock(&(deviceListMutex));
+    for (i = 0; i < MAX_DEVICES; i++) {
+        if (deviceList[i]) {
+            pthread_mutex_unlock(&(deviceListMutex));
+            mapFunction(deviceList[i]);
+            pthread_mutex_lock(&(deviceListMutex));
+        }
+    }
+    pthread_mutex_unlock(&(deviceListMutex));
 }
 
 
-static ALCenum opensl_open_playback(ALCdevice *Device, const ALCchar *deviceName)
-{
-    osl_data *data = NULL;
+static void *playback_function(void * context) {
+    LOGV("playback_function started");
+    outputBuffer_t *buffer = NULL;
     SLresult result;
+    struct timespec ts;
+    int rc;
+    assert(NULL != context);
+    ALCdevice *pDevice = (ALCdevice *) context;
+    opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
+    unsigned int bufferIndex = devState->lastBufferMixed;
 
-    if(!deviceName)
-        deviceName = opensl_device;
-    else if(strcmp(deviceName, opensl_device) != 0)
-        return ALC_INVALID_VALUE;
+    ALint frameSize = FrameSizeFromDevFmt(pDevice->FmtChans, pDevice->FmtType);
 
-    data = calloc(1, sizeof(*data));
-    if(!data)
-        return ALC_OUT_OF_MEMORY;
+    // Show a sensible name for the thread in debug tools
+    prctl(PR_SET_NAME, (unsigned long)"OpenAL/sl/m", 0, 0, 0);
+
+    while (1) {
+        if (devState->threadShouldRun == 0) {
+            return NULL;
+        }
+
+        bufferIndex = (++bufferIndex) % bufferCount;
+        buffer = &(devState->outputBuffers[bufferIndex]);
+
+        pthread_mutex_lock(&(buffer->mutex));
+
+        while (1) {
+            if (devState->threadShouldRun == 0) {
+                pthread_mutex_unlock(&(buffer->mutex));
+                return NULL;
+            }
+
+            // This is a little hacky, but here we avoid mixing too much data
+            if (buffer->state == OUTPUT_BUFFER_STATE_FREE) {
+                int i = (bufferIndex - premixCount) % bufferCount;
+                outputBuffer_t *buffer1 = &(devState->outputBuffers[i]);
+                if (buffer1->state == OUTPUT_BUFFER_STATE_ENQUEUED ||
+                    buffer1->state == OUTPUT_BUFFER_STATE_FREE) {
+                    break;
+                }
+            }
+
+            // No buffer available, wait for a buffer to become available
+            // or until playback is stopped/suspended
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_nsec += 5000000;
+            rc = pthread_cond_timedwait(&(buffer->cond), &(buffer->mutex), &ts);
+        }
+        devState->threadIsReady = 1;
+
+        aluMixData(pDevice, buffer->buffer, bufferSize/frameSize);
+        buffer->state = OUTPUT_BUFFER_STATE_MIXED;
+        pthread_cond_signal(&(buffer->cond));
+        pthread_mutex_unlock(&(buffer->mutex));
+
+        devState->lastBufferMixed = bufferIndex;
+    }
+}
+
+SLresult alc_opensl_init_extradata(ALCdevice *pDevice)
+{
+    opesles_data_t *devState = NULL;
+    int i;
+    devState = malloc(sizeof(opesles_data_t));
+    if (!devState) {
+        return SL_RESULT_MEMORY_FAILURE;
+    }
+    bzero(devState, sizeof(opesles_data_t));
+    devState->outputBuffers = (outputBuffer_t*) malloc(sizeof(outputBuffer_t)*bufferCount);
+    if (!devState->outputBuffers) {
+        free(devState);
+        return SL_RESULT_MEMORY_FAILURE;
+    }
+    pDevice->ExtraData = devState;
+    bzero(devState->outputBuffers, sizeof(outputBuffer_t)*bufferCount);
+    devState->lastBufferEnqueued = -1;
+    devState->lastBufferMixed = -1;
+    for (i = 0; i < bufferCount; i++) {
+        if (pthread_mutex_init(&(devState->outputBuffers[i].mutex), (pthread_mutexattr_t*) NULL) != 0) {
+            LOGV("Error on init of mutex");
+            free(devState->outputBuffers);
+            free(devState);
+            return SL_RESULT_UNKNOWN_ERROR;
+        }
+        if (pthread_cond_init(&(devState->outputBuffers[i].cond), (pthread_condattr_t*) NULL) != 0) {
+            LOGV("Error on init of cond");
+            free(devState->outputBuffers);
+            free(devState);
+            return SL_RESULT_UNKNOWN_ERROR;
+        }
+        devState->outputBuffers[i].state = OUTPUT_BUFFER_STATE_FREE;
+    }
+    // For the Android suspend/resume functionaly, keep track of all device contexts
+    devlist_add(pDevice);
+    return SL_RESULT_SUCCESS;
+}
+
+static ALCboolean start_playback(ALCdevice *pDevice) {
+    opesles_data_t *devState = NULL;
+	int i;
+
+    if (pDevice->ExtraData == NULL) {
+        alc_opensl_init_extradata(pDevice);
+    } else {
+        devState = (opesles_data_t *) pDevice->ExtraData;
+    }
+
+    if (devState->threadShouldRun == 1) {
+        // Gratuitous resume
+        return ALC_TRUE;
+    }
+
+    // start/restart playback thread
+    devState->threadShouldRun = 1;
+
+    pthread_attr_t playbackThreadAttr;
+    pthread_attr_init(&playbackThreadAttr);
+    struct sched_param playbackThreadParam;
+    playbackThreadParam.sched_priority = sched_get_priority_max(SCHED_RR);
+    pthread_attr_setschedpolicy(&playbackThreadAttr, SCHED_RR);
+    pthread_attr_setschedparam(&playbackThreadAttr, &playbackThreadParam);
+    pthread_create(&(devState->playbackThread), &playbackThreadAttr, playback_function,  (void *) pDevice);
+    while (devState->threadShouldRun && (0 == devState->threadIsReady))
+    {
+        sched_yield();
+    }
+    return ALC_TRUE;
+}
+
+static void stop_playback(ALCdevice *pDevice) {
+    opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
+    devState->threadShouldRun = 0;
+    pthread_join(devState->playbackThread, NULL);
+    return;
+}
+
+// this callback handler is called every time a buffer finishes playing
+static void opensles_callback(SLAndroidSimpleBufferQueueItf bq, void *context)
+{
+    ALCdevice *pDevice = (ALCdevice *) context;
+    opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
+    unsigned int bufferIndex = devState->lastBufferEnqueued;
+    unsigned int i;
+    struct timespec ts;
+    int rc;
+    SLresult result;
+    outputBuffer_t *buffer = NULL;
+
+    bufferIndex = (++bufferIndex) % bufferCount;
+    buffer = &(devState->outputBuffers[bufferIndex]);
+
+    pthread_mutex_lock(&(buffer->mutex));
+    // We will block until 'next' buffer has mixed audio, but first flag oldest equeued buffer as free
+    for (i = 1; i <= bufferCount; i++) {
+        unsigned int j = (devState->lastBufferEnqueued+i) % bufferCount;
+        outputBuffer_t *bufferFree = &(devState->outputBuffers[j]);
+        if (bufferFree->state == OUTPUT_BUFFER_STATE_ENQUEUED) {
+            bufferFree->state = OUTPUT_BUFFER_STATE_FREE;
+            break;
+        }
+    }
+    while (buffer->state != OUTPUT_BUFFER_STATE_MIXED) {
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_nsec += 100000;
+        rc = pthread_cond_timedwait(&(buffer->cond), &(buffer->mutex), &ts);
+        if (rc != 0) {
+            if (devState->threadShouldRun == 0) {
+                // we are probably suspended
+                pthread_mutex_unlock(&(buffer->mutex));
+                return;
+            }
+        }
+    }
+
+    result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, buffer->buffer, bufferSize);
+    if (SL_RESULT_SUCCESS == result) {
+        buffer->state = OUTPUT_BUFFER_STATE_ENQUEUED;
+        devState->lastBufferEnqueued = bufferIndex;
+        pthread_cond_signal(&(buffer->cond));
+    } else {
+        bufferIndex--;
+    }
+    pthread_mutex_unlock(&(buffer->mutex));
+}
+
+
+static const ALCchar opensles_device[] = "OpenSL ES";
+
+// Apportable extensions
+SLresult alc_opensl_create_native_audio_engine()
+{
+    if (engineObject)
+        return SL_RESULT_SUCCESS;
+
+    SLresult result;
 
     // create engine
-    result = slCreateEngine(&data->engineObject, 0, NULL, 0, NULL, NULL);
-    PRINTERR(result, "slCreateEngine");
-    if(SL_RESULT_SUCCESS == result)
-    {
-        result = SLObjectItf_Realize(data->engineObject, SL_BOOLEAN_FALSE);
-        PRINTERR(result, "engine->Realize");
+    result = pslCreateEngine(&engineObject, 0, NULL, 0, NULL, NULL);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // realize the engine
+    result = (*engineObject)->Realize(engineObject, SL_BOOLEAN_FALSE);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // get the engine interface, which is needed in order to create other objects
+    result = (*engineObject)->GetInterface(engineObject, *pSL_IID_ENGINE, &engineEngine);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // create output mix
+    result = (*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 0, NULL, NULL);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // realize the output mix
+    result = (*outputMixObject)->Realize(outputMixObject, SL_BOOLEAN_FALSE);
+    assert(SL_RESULT_SUCCESS == result);
+
+    return result;
+}
+
+// Backend functions, in same order as type BackendFuncs
+static ALCenum opensles_open_playback(ALCdevice *pDevice, const ALCchar *deviceName)
+{
+    LOGV("opensles_open_playback pDevice=%p, deviceName=%s", pDevice, deviceName);
+    opesles_data_t *devState;
+
+    // Check if probe has linked the opensl symbols
+    if (pslCreateEngine == NULL) {
+        alc_opensl_probe(ALL_DEVICE_PROBE);
+        if (pslCreateEngine == NULL) {
+            return ALC_INVALID_DEVICE;
+        }
     }
-    if(SL_RESULT_SUCCESS == result)
-    {
-        result = SLObjectItf_GetInterface(data->engineObject, SL_IID_ENGINE, &data->engine);
-        PRINTERR(result, "engine->GetInterface");
-    }
-    if(SL_RESULT_SUCCESS == result)
-    {
-        result = SLEngineItf_CreateOutputMix(data->engine, &data->outputMix, 0, NULL, NULL);
-        PRINTERR(result, "engine->CreateOutputMix");
-    }
-    if(SL_RESULT_SUCCESS == result)
-    {
-        result = SLObjectItf_Realize(data->outputMix, SL_BOOLEAN_FALSE);
-        PRINTERR(result, "outputMix->Realize");
+    if (pDevice->ExtraData == NULL) {
+        alc_opensl_init_extradata(pDevice);
+    } else {
+        devState = (opesles_data_t *) pDevice->ExtraData;
     }
 
-    if(SL_RESULT_SUCCESS != result)
-    {
-        if(data->outputMix != NULL)
-            SLObjectItf_Destroy(data->outputMix);
-        data->outputMix = NULL;
-
-        if(data->engineObject != NULL)
-            SLObjectItf_Destroy(data->engineObject);
-        data->engineObject = NULL;
-        data->engine = NULL;
-
-        free(data);
-        return ALC_INVALID_VALUE;
-    }
-
-    Device->DeviceName = strdup(deviceName);
-    Device->ExtraData = data;
+    // create the engine and output mix objects
+    SLresult result = alc_opensl_create_native_audio_engine();
 
     return ALC_NO_ERROR;
 }
 
 
-static void opensl_close_playback(ALCdevice *Device)
+static void opensles_close_playback(ALCdevice *pDevice)
 {
-    osl_data *data = Device->ExtraData;
+    LOGV("opensles_close_playback pDevice=%p", pDevice);
+    opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
 
-    if(data->bufferQueueObject != NULL)
-        SLObjectItf_Destroy(data->bufferQueueObject);
-    data->bufferQueueObject = NULL;
+    // shut down the native audio system
 
-    SLObjectItf_Destroy(data->outputMix);
-    data->outputMix = NULL;
+    // destroy buffer queue audio player object, and invalidate all associated interfaces
+    if (devState->bqPlayerObject != NULL) {
+        (*devState->bqPlayerObject)->Destroy(devState->bqPlayerObject);
+        devState->bqPlayerObject = NULL;
+        devState->bqPlayerPlay = NULL;
+        devState->bqPlayerBufferQueue = NULL;
+    }
 
-    SLObjectItf_Destroy(data->engineObject);
-    data->engineObject = NULL;
-    data->engine = NULL;
 
-    free(data);
-    Device->ExtraData = NULL;
+
+    devlist_remove(pDevice);
 }
 
-static ALCboolean opensl_reset_playback(ALCdevice *Device)
+static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
 {
-    osl_data *data = Device->ExtraData;
-    SLDataLocator_AndroidSimpleBufferQueue loc_bufq;
-    SLDataLocator_OutputMix loc_outmix;
-    SLDataFormat_PCM format_pcm;
-    SLDataSource audioSrc;
-    SLDataSink audioSnk;
-    SLInterfaceID id;
-    SLboolean req;
-    SLresult result;
-
-
-    Device->UpdateSize = (ALuint64)Device->UpdateSize * 44100 / Device->Frequency;
-    Device->UpdateSize = Device->UpdateSize * Device->NumUpdates / 2;
-    Device->NumUpdates = 2;
-
-    Device->Frequency = 44100;
-    Device->FmtChans = DevFmtStereo;
-    Device->FmtType = DevFmtShort;
-
-    SetDefaultWFXChannelOrder(Device);
-
-
-    id  = SL_IID_ANDROIDSIMPLEBUFFERQUEUE;
-    req = SL_BOOLEAN_TRUE;
-
-    loc_bufq.locatorType = SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE;
-    loc_bufq.numBuffers = Device->NumUpdates;
-
-    format_pcm.formatType = SL_DATAFORMAT_PCM;
-    format_pcm.numChannels = ChannelsFromDevFmt(Device->FmtChans);
-    format_pcm.samplesPerSec = Device->Frequency * 1000;
-    format_pcm.bitsPerSample = BytesFromDevFmt(Device->FmtType) * 8;
-    format_pcm.containerSize = format_pcm.bitsPerSample;
-    format_pcm.channelMask = GetChannelMask(Device->FmtChans);
-    format_pcm.endianness = IS_LITTLE_ENDIAN ? SL_BYTEORDER_LITTLEENDIAN :
-                                               SL_BYTEORDER_BIGENDIAN;
-
-    audioSrc.pLocator = &loc_bufq;
-    audioSrc.pFormat = &format_pcm;
-
-    loc_outmix.locatorType = SL_DATALOCATOR_OUTPUTMIX;
-    loc_outmix.outputMix = data->outputMix;
-    audioSnk.pLocator = &loc_outmix;
-    audioSnk.pFormat = NULL;
-
-
-    if(data->bufferQueueObject != NULL)
-        SLObjectItf_Destroy(data->bufferQueueObject);
-    data->bufferQueueObject = NULL;
-
-    result = SLEngineItf_CreateAudioPlayer(data->engine, &data->bufferQueueObject, &audioSrc, &audioSnk, 1, &id, &req);
-    PRINTERR(result, "engine->CreateAudioPlayer");
-    if(SL_RESULT_SUCCESS == result)
-    {
-        result = SLObjectItf_Realize(data->bufferQueueObject, SL_BOOLEAN_FALSE);
-        PRINTERR(result, "bufferQueue->Realize");
+    LOGV("opensles_reset_playback pDevice=%p", pDevice);
+    opesles_data_t *devState;
+    unsigned bits = BytesFromDevFmt(pDevice->FmtType) * 8;
+    unsigned channels = ChannelsFromDevFmt(pDevice->FmtChans);
+    unsigned samples = pDevice->UpdateSize;
+    unsigned size = samples * channels * bits / 8;
+	SLuint32 sampling_rate = pDevice->Frequency * 1000;
+	SLresult result;
+    LOGV("bits=%u, channels=%u, samples=%u, size=%u, freq=%u", bits, channels, samples, size, pDevice->Frequency);
+    if (pDevice->Frequency <= 22050) {
+        bufferSize = defaultBufferSize / 2;
     }
 
-    if(SL_RESULT_SUCCESS != result)
-    {
-        if(data->bufferQueueObject != NULL)
-            SLObjectItf_Destroy(data->bufferQueueObject);
-        data->bufferQueueObject = NULL;
+    devState = (opesles_data_t *) pDevice->ExtraData;
 
-        return ALC_FALSE;
-    }
+    // create buffer queue audio player
+
+    // configure audio source
+    SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
+//    SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, SL_SAMPLINGRATE_44_1,
+    SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, sampling_rate,
+        SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,
+        SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN};
+    SLDataSource audioSrc = {&loc_bufq, &format_pcm};
+
+    // configure audio sink
+    SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
+    SLDataSink audioSnk = {&loc_outmix, NULL};
+
+    // create audio player
+    LOGV("create audio player");
+    const SLInterfaceID ids[1] = {*pSL_IID_ANDROIDSIMPLEBUFFERQUEUE};
+    const SLboolean req[1] = {SL_BOOLEAN_TRUE};
+    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &devState->bqPlayerObject, &audioSrc, &audioSnk,
+        1, ids, req);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // realize the player
+    result = (*devState->bqPlayerObject)->Realize(devState->bqPlayerObject, SL_BOOLEAN_FALSE);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // get the play interface
+    result = (*devState->bqPlayerObject)->GetInterface(devState->bqPlayerObject, *pSL_IID_PLAY, &devState->bqPlayerPlay);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // get the buffer queue interface
+    result = (*devState->bqPlayerObject)->GetInterface(devState->bqPlayerObject, *pSL_IID_BUFFERQUEUE,
+            &devState->bqPlayerBufferQueue);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // register callback on the buffer queue
+    result = (*devState->bqPlayerBufferQueue)->RegisterCallback(devState->bqPlayerBufferQueue, opensles_callback, (void *) pDevice);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // playback_lock = createThreadLock();
+    start_playback(pDevice);
+
+    // set the player's state to playing
+    result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+    assert(SL_RESULT_SUCCESS == result);
+
+    // enqueue the first buffer to kick off the callbacks
+    result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, "\0", 1);
+    assert(SL_RESULT_SUCCESS == result);
+
+
+    SetDefaultWFXChannelOrder(pDevice);
+    devlist_add(pDevice);
 
     return ALC_TRUE;
 }
 
-static ALCboolean opensl_start_playback(ALCdevice *Device)
+static ALCboolean opensles_start_playback(ALCdevice *pDevice)
 {
-    osl_data *data = Device->ExtraData;
-    SLAndroidSimpleBufferQueueItf bufferQueue;
-    SLPlayItf player;
-    SLresult result;
-    ALuint i;
-
-    result = SLObjectItf_GetInterface(data->bufferQueueObject, SL_IID_BUFFERQUEUE, &bufferQueue);
-    PRINTERR(result, "bufferQueue->GetInterface");
-    if(SL_RESULT_SUCCESS == result)
-    {
-        result = (*bufferQueue)->RegisterCallback(bufferQueue, opensl_callback, Device);
-        PRINTERR(result, "bufferQueue->RegisterCallback");
-    }
-    if(SL_RESULT_SUCCESS == result)
-    {
-        data->frameSize = FrameSizeFromDevFmt(Device->FmtChans, Device->FmtType);
-        data->bufferSize = Device->UpdateSize * data->frameSize;
-        data->buffer = calloc(1, data->bufferSize);
-        if(!data->buffer)
-        {
-            result = SL_RESULT_MEMORY_FAILURE;
-            PRINTERR(result, "calloc");
-        }
-    }
-    /* enqueue the first buffer to kick off the callbacks */
-    for(i = 0;i < Device->NumUpdates;i++)
-    {
-        if(SL_RESULT_SUCCESS == result)
-        {
-            result = (*bufferQueue)->Enqueue(bufferQueue, data->buffer, data->bufferSize);
-            PRINTERR(result, "bufferQueue->Enqueue");
-        }
-    }
-    if(SL_RESULT_SUCCESS == result)
-    {
-        result = SLObjectItf_GetInterface(data->bufferQueueObject, SL_IID_PLAY, &player);
-        PRINTERR(result, "bufferQueue->GetInterface");
-    }
-    if(SL_RESULT_SUCCESS == result)
-    {
-        result = SLPlayItf_SetPlayState(player, SL_PLAYSTATE_PLAYING);
-        PRINTERR(result, "player->SetPlayState");
-    }
-
-    if(SL_RESULT_SUCCESS != result)
-    {
-        if(data->bufferQueueObject != NULL)
-            SLObjectItf_Destroy(data->bufferQueueObject);
-        data->bufferQueueObject = NULL;
-
-        free(data->buffer);
-        data->buffer = NULL;
-        data->bufferSize = 0;
-
-        return ALC_FALSE;
-    }
-
-    return ALC_TRUE;
+    LOGV("opensles_start_playback device=%p", pDevice);
+    return start_playback(pDevice);
 }
 
 
-static void opensl_stop_playback(ALCdevice *Device)
+static void opensles_stop_playback(ALCdevice *pDevice)
 {
-    osl_data *data = Device->ExtraData;
+    LOGV("opensles_stop_playback device=%p", pDevice);
+    stop_playback(pDevice);
+}
 
-    free(data->buffer);
-    data->buffer = NULL;
-    data->bufferSize = 0;
+static ALCenum opensles_open_capture(ALCdevice *pDevice, const ALCchar *deviceName)
+{
+    LOGV("opensles_open_capture  device=%p, deviceName=%s", pDevice, deviceName);
+    return ALC_NO_ERROR;
+}
+
+static void opensles_close_capture(ALCdevice *pDevice)
+{
+    LOGV("opensles_closed_capture device=%p", pDevice);
+}
+
+static void opensles_start_capture(ALCdevice *pDevice)
+{
+    LOGV("opensles_start_capture device=%p", pDevice);
+}
+
+static void opensles_stop_capture(ALCdevice *pDevice)
+{
+    LOGV("opensles_stop_capture device=%p", pDevice);
+}
+
+static ALCenum opensles_capture_samples(ALCdevice *pDevice, ALCvoid *pBuffer, ALCuint lSamples)
+{
+    LOGV("opensles_capture_samples device=%p, pBuffer=%p, lSamples=%u", pDevice, pBuffer, lSamples);
+    return ALC_NO_ERROR;
+}
+
+static ALCuint opensles_available_samples(ALCdevice *pDevice)
+{
+    LOGV("opensles_available_samples device=%p", pDevice);
+    return 0;
+}
+
+void opensles_device_lock(ALCdevice *pDevice)
+{
+    // No-op
+}
+
+void opensles_device_unlock(ALCdevice *pDevice)
+{
+    // No-op
+}
+
+ALint64 opensles_get_latency(ALCdevice *pDevice)
+{
+    LOGV("opensles_get_latency device=%p", pDevice);
+    return 0;
 }
 
 
-static const BackendFuncs opensl_funcs = {
-    opensl_open_playback,
-    opensl_close_playback,
-    opensl_reset_playback,
-    opensl_start_playback,
-    opensl_stop_playback,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    ALCdevice_LockDefault,
-    ALCdevice_UnlockDefault,
-    ALCdevice_GetLatencyDefault
+// table of backend function pointers
+
+BackendFuncs opensles_funcs = {
+    opensles_open_playback,     // OpenPlayback
+    opensles_close_playback,    // ClosePlayback
+    opensles_reset_playback,    // ResetPlayback
+    opensles_start_playback,    // StartPlayback
+    opensles_stop_playback,     // StopPlayback
+    opensles_open_capture,      // OpenCapture
+    opensles_close_capture,     // CloseCapture
+    opensles_start_capture,     // StartCapture
+    opensles_stop_capture,      // StopCapture
+    opensles_capture_samples,   // CaptureSamples
+    opensles_available_samples, // AvailableSamples
+
+    opensles_device_lock,       // Lock
+    opensles_device_unlock,     // Unlock
+
+    opensles_get_latency        // GetLatency
 };
 
+// typedef struct {
+//     ALCenum (*OpenPlayback)(ALCdevice*, const ALCchar*);
+//     void (*ClosePlayback)(ALCdevice*);
+//     ALCboolean (*ResetPlayback)(ALCdevice*);
+//     ALCboolean (*StartPlayback)(ALCdevice*);
+//     void (*StopPlayback)(ALCdevice*);
+
+//     ALCenum (*OpenCapture)(ALCdevice*, const ALCchar*);
+//     void (*CloseCapture)(ALCdevice*);
+//     void (*StartCapture)(ALCdevice*);
+//     void (*StopCapture)(ALCdevice*);
+//     ALCenum (*CaptureSamples)(ALCdevice*, void*, ALCuint);
+//     ALCuint (*AvailableSamples)(ALCdevice*);
+
+//     void (*Lock)(ALCdevice*);
+//     void (*Unlock)(ALCdevice*);
+
+//     ALint64 (*GetLatency)(ALCdevice*);
+// } BackendFuncs;
+
+
+
+
+
+// global entry points called from XYZZY
+
+
+static void suspend_device(ALCdevice *pDevice) {
+    SLresult result;
+    if (pDevice) {
+        opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
+        if (devState->bqPlayerPlay) {
+            result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PAUSED);
+            assert(SL_RESULT_SUCCESS == result);
+            result = (*devState->bqPlayerBufferQueue)->Clear(devState->bqPlayerBufferQueue);
+            assert(SL_RESULT_SUCCESS == result);
+        }
+        stop_playback(pDevice);
+    }
+}
+
+static void resume_device(ALCdevice *pDevice) {
+    SLresult result;
+    if (pDevice) {
+        opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
+        if (devState->bqPlayerPlay) {
+            result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+            assert(SL_RESULT_SUCCESS == result);
+            // Pump some blank data into the buffer to stimulate the callback
+            result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, "\0", 1);
+            assert(SL_RESULT_SUCCESS == result);
+        }
+        start_playback(pDevice);
+     }
+ }
+
+void alc_opensl_suspend()
+{
+    devlist_process(&suspend_device);
+}
+
+void alc_opensl_resume()
+{
+    devlist_process(&resume_device);
+}
+
+static void alc_opensl_set_java_vm(JavaVM *vm)
+{
+    // Called once and only once from JNI_OnLoad
+    javaVM = vm;
+    int i;
+    char *android_model;
+    char *low_buffer_models[] = {
+        "GT-I9300",
+        "GT-I9305",
+        "SHV-E210",
+        "SGH-T999",
+        "SGH-I747",
+        "SGH-N064",
+        "SC-06D",
+        "SGH-N035",
+        "SC-03E",
+        "SCH-R530",
+        "SCH-I535",
+        "SPH-L710",
+        "GT-I9308",
+        "SCH-I939",
+        "Kindle Fire",
+        NULL};
+
+	if(NULL != javaVM)
+	{
+		int android_os_version = alc_opensl_get_android_api();
+		// If running on 4.1 (Jellybean) or later, use 8 buffers to avoid breakup/stuttering.
+		if(android_os_version >= 16)
+		{
+			premixCount = 5;
+		}
+		// Else, use 4 buffers to reduce latency
+		else
+		{
+			premixCount = 1;
+		}
+        android_model = alc_opensl_get_android_model();
+        for (i = 0; low_buffer_models[i] != NULL; i++) {
+            if (strncmp(android_model, low_buffer_models[i], strlen(low_buffer_models[i])) == 0) {
+                LOGV("Using less buffering");
+                defaultBufferSize = 1024;
+                bufferSize = 1024;
+                premixCount = 1;
+                break;
+            }
+        }
+	}
+}
 
 ALCboolean alc_opensl_init(BackendFuncs *func_list)
 {
-    *func_list = opensl_funcs;
+    LOGV("alc_opensl_init");
+
+    struct stat statinfo;
+    if (stat("/system/lib/libOpenSLES.so", &statinfo) != 0) {
+        return ALC_FALSE;
+    }
+
+    *func_list = opensles_funcs;
+
+	// We need the JavaVM for JNI so we can detect the OS version number at runtime.
+	// This is because we need to use different bufferCount values for Android 4.1 vs. pre-4.1.
+	// This must be set at constructor time before JNI_OnLoad is invoked.
+	androidOpenALFuncs.alc_android_set_java_vm = alc_opensl_set_java_vm;
+
     return ALC_TRUE;
 }
 
 void alc_opensl_deinit(void)
 {
+    LOGV("alc_opensl_deinit");
+
+    // destroy output mix object, and invalidate all associated interfaces
+    if (outputMixObject != NULL) {
+        (*outputMixObject)->Destroy(outputMixObject);
+        outputMixObject = NULL;
+    }
+
+    // destroy engine object, and invalidate all associated interfaces
+    if (engineObject != NULL) {
+        (*engineObject)->Destroy(engineObject);
+        engineObject = NULL;
+        engineEngine = NULL;
+    }
 }
 
 void alc_opensl_probe(enum DevProbe type)
 {
-    switch(type)
-    {
-        case ALL_DEVICE_PROBE:
-            AppendAllDevicesList(opensl_device);
-            break;
-        case CAPTURE_DEVICE_PROBE:
-            break;
+    char *error;
+    struct stat statinfo;
+    if (stat("/system/lib/libOpenSLES.so", &statinfo) != 0) {
+        LOGV("alc_opensl_probe OpenSLES support not found.");
+        return;
+    }
+
+    dlerror(); // Clear dl errors
+    void *dlHandle = dlopen("/system/lib/libOpenSLES.so", RTLD_NOW | RTLD_GLOBAL);
+    if (!dlHandle || (error = (typeof(error))dlerror()) != NULL) {
+        LOGV("OpenSLES could not be loaded.");
+        return;
+    }
+
+#define LOAD_SYM_POINTER(sym) \
+    do { \
+        p##sym = dlsym(dlHandle, #sym); \
+        if((error=(typeof(error))dlerror()) != NULL) { \
+            LOGV("alc_opensl_probe could not load %s, error: %s", #sym, error); \
+            dlclose(dlHandle); \
+            return; \
+        } \
+    } while(0)
+
+    LOAD_SYM_POINTER(slCreateEngine);
+    LOAD_SYM_POINTER(SL_IID_ENGINE);
+    LOAD_SYM_POINTER(SL_IID_ANDROIDSIMPLEBUFFERQUEUE);
+    LOAD_SYM_POINTER(SL_IID_PLAY);
+    LOAD_SYM_POINTER(SL_IID_BUFFERQUEUE);
+
+    androidOpenALFuncs.alc_android_suspend = alc_opensl_suspend;
+    androidOpenALFuncs.alc_android_resume = alc_opensl_resume;
+
+    switch (type) {
+    // case DEVICE_PROBE:
+    //     LOGV("alc_opensl_probe DEVICE_PROBE");
+    //     AppendDeviceList(opensles_device);
+    //     break;
+    case ALL_DEVICE_PROBE:
+        LOGV("alc_opensl_probe ALL_DEVICE_PROBE");
+        AppendAllDevicesList(opensl_device);
+        break;
+    default:
+        LOGV("alc_opensl_probe type=%d", type);
+        break;
     }
 }

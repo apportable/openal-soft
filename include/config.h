@@ -31,7 +31,7 @@
 #define STEREO_ONLY 1
 
 #if defined(POST_FROYO)
-#define HAVE_OPENSLES 1
+#define HAVE_OPENSL 1
 #endif
 
 #define HAVE_AUDIOTRACK 1
