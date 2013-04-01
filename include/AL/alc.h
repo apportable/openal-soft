@@ -230,6 +230,12 @@ typedef void           (ALC_APIENTRY *LPALCCAPTURESTART)(ALCdevice *device);
 typedef void           (ALC_APIENTRY *LPALCCAPTURESTOP)(ALCdevice *device);
 typedef void           (ALC_APIENTRY *LPALCCAPTURESAMPLES)(ALCdevice *device, ALCvoid *buffer, ALCsizei samples);
 
+#if defined(ANDROID)
+/** OpenAL extension for suspend/resume of audio throughout android application lifecycle */
+ALC_API void       ALC_APIENTRY alcSuspend(void);
+ALC_API void       ALC_APIENTRY alcResume(void);
+#endif
+
 #if defined(__cplusplus)
 }
 #endif
