@@ -122,7 +122,7 @@ ALvoid MixSource(ALsource *Source, ALCdevice *Device, ALuint SamplesToDo)
 
     /* Get current buffer queue item */
     BufferListItem = Source->queue;
-    for(j = 0;j < BuffersPlayed;j++)
+    for(j = 0;j < BuffersPlayed && BufferListItem;j++)
         BufferListItem = BufferListItem->next;
 
     OutPos = 0;
@@ -363,7 +363,7 @@ ALvoid MixSource(ALsource *Source, ALCdevice *Device, ALuint SamplesToDo)
             ALuint LoopStart = 0;
             ALuint LoopEnd = 0;
 
-            if((ALBuffer=BufferListItem->buffer) != NULL)
+            if(BufferListItem && (ALBuffer=BufferListItem->buffer) != NULL)
             {
                 DataSize = ALBuffer->SampleLen;
                 LoopStart = ALBuffer->LoopStart;
@@ -381,7 +381,7 @@ ALvoid MixSource(ALsource *Source, ALCdevice *Device, ALuint SamplesToDo)
             if(DataSize > DataPosInt)
                 break;
 
-            if(BufferListItem->next)
+            if(BufferListItem && BufferListItem->next)
             {
                 BufferListItem = BufferListItem->next;
                 BuffersPlayed++;
