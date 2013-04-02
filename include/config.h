@@ -139,4 +139,7 @@
 /* Define if we have pthread_setschedparam() */
 #define HAVE_PTHREAD_SETSCHEDPARAM 1
 
+// Skip trying to read a config file in Android builds
+#define HAVE_NO_CONFIG_FILE
+
 #endif

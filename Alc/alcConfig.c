@@ -30,6 +30,58 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+
+#ifdef HAVE_NO_CONFIG_FILE
+
+static void LoadConfigFromFile(FILE *f)
+{
+}
+
+void ReadALConfig(void)
+{
+}
+
+void FreeALConfig(void)
+{
+}
+
+const char *GetConfigValue(const char *blockName, const char *keyName, const char *def)
+{
+    return def;
+}
+
+int ConfigValueExists(const char *blockName, const char *keyName)
+{
+    return 0;
+}
+
+int ConfigValueStr(const char *blockName, const char *keyName, const char **ret)
+{
+    return 0;
+}
+
+int ConfigValueInt(const char *blockName, const char *keyName, int *ret)
+{
+    return 0;
+}
+
+int ConfigValueUInt(const char *blockName, const char *keyName, unsigned int *ret)
+{
+    return 0;
+}
+
+int ConfigValueFloat(const char *blockName, const char *keyName, float *ret)
+{
+    return 0;
+}
+
+int GetConfigValueBool(const char *blockName, const char *keyName, int def)
+{
+    return def;
+}
+
+#else
+
 #include <ctype.h>
 #include <string.h>
 
@@ -361,3 +413,5 @@ int GetConfigValueBool(const char *blockName, const char *keyName, int def)
     return (strcasecmp(val, "true") == 0 || strcasecmp(val, "yes") == 0 ||
             strcasecmp(val, "on") == 0 || atoi(val) != 0);
 }
+
+#endif
