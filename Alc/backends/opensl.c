@@ -41,15 +41,6 @@
 
 static const ALCchar opensl_device[] = "opensl";
 
-#define LOG_NDEBUG 0
-#undef LOG_TAG
-#define LOG_TAG "OpenAL_SLES"
-
-#if 1
-#define LOGV(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-#else
-#define LOGV(...)
-#endif
 
 // for native audio
 #include <SLES/OpenSLES.h>
@@ -92,7 +83,7 @@ static int alc_opensl_get_android_api()
         }
         (*env)->DeleteLocalRef(env, androidVersionClass);
     }
-    LOGV("API:%d", androidApiLevel);
+    TRACE("API:%d", androidApiLevel);
     return androidApiLevel;
 }
 static char *androidModel = NULL;
@@ -126,7 +117,7 @@ static char *alc_opensl_get_android_model()
         }
         (*env)->PopLocalFrame(env, NULL);
     }
-    LOGV("Model:%s", androidModel);
+    TRACE("Model:%s", androidModel);
     return androidModel;
 }
 
@@ -222,7 +213,7 @@ static void devlist_process(deviceListFn mapFunction) {
 
 
 static void *playback_function(void * context) {
-    LOGV("playback_function started");
+    TRACE("playback_function started");
     outputBuffer_t *buffer = NULL;
     SLresult result;
     struct timespec ts;
@@ -300,13 +291,13 @@ SLresult alc_opensl_init_extradata(ALCdevice *pDevice)
     devState->lastBufferMixed = -1;
     for (i = 0; i < bufferCount; i++) {
         if (pthread_mutex_init(&(devState->outputBuffers[i].mutex), (pthread_mutexattr_t*) NULL) != 0) {
-            LOGV("Error on init of mutex");
+            TRACE("Error on init of mutex");
             free(devState->outputBuffers);
             free(devState);
             return SL_RESULT_UNKNOWN_ERROR;
         }
         if (pthread_cond_init(&(devState->outputBuffers[i].cond), (pthread_condattr_t*) NULL) != 0) {
-            LOGV("Error on init of cond");
+            TRACE("Error on init of cond");
             free(devState->outputBuffers);
             free(devState);
             return SL_RESULT_UNKNOWN_ERROR;
@@ -443,7 +434,7 @@ SLresult alc_opensl_create_native_audio_engine()
 // Backend functions, in same order as type BackendFuncs
 static ALCenum opensles_open_playback(ALCdevice *pDevice, const ALCchar *deviceName)
 {
-    LOGV("opensles_open_playback pDevice=%p, deviceName=%s", pDevice, deviceName);
+    TRACE("opensles_open_playback pDevice=%p, deviceName=%s", pDevice, deviceName);
     opesles_data_t *devState;
 
     // Check if probe has linked the opensl symbols
@@ -468,7 +459,7 @@ static ALCenum opensles_open_playback(ALCdevice *pDevice, const ALCchar *deviceN
 
 static void opensles_close_playback(ALCdevice *pDevice)
 {
-    LOGV("opensles_close_playback pDevice=%p", pDevice);
+    TRACE("opensles_close_playback pDevice=%p", pDevice);
     opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
 
     // shut down the native audio system
@@ -481,14 +472,12 @@ static void opensles_close_playback(ALCdevice *pDevice)
         devState->bqPlayerBufferQueue = NULL;
     }
 
-
-
     devlist_remove(pDevice);
 }
 
 static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
 {
-    LOGV("opensles_reset_playback pDevice=%p", pDevice);
+    TRACE("opensles_reset_playback pDevice=%p", pDevice);
     opesles_data_t *devState;
     unsigned bits = BytesFromDevFmt(pDevice->FmtType) * 8;
     unsigned channels = ChannelsFromDevFmt(pDevice->FmtChans);
@@ -496,7 +485,7 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     unsigned size = samples * channels * bits / 8;
 	SLuint32 sampling_rate = pDevice->Frequency * 1000;
 	SLresult result;
-    LOGV("bits=%u, channels=%u, samples=%u, size=%u, freq=%u", bits, channels, samples, size, pDevice->Frequency);
+    TRACE("bits=%u, channels=%u, samples=%u, size=%u, freq=%u", bits, channels, samples, size, pDevice->Frequency);
     if (pDevice->Frequency <= 22050) {
         bufferSize = defaultBufferSize / 2;
     }
@@ -518,7 +507,7 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     SLDataSink audioSnk = {&loc_outmix, NULL};
 
     // create audio player
-    LOGV("create audio player");
+    TRACE("create audio player");
     const SLInterfaceID ids[1] = {*pSL_IID_ANDROIDSIMPLEBUFFERQUEUE};
     const SLboolean req[1] = {SL_BOOLEAN_TRUE};
     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &devState->bqPlayerObject, &audioSrc, &audioSnk,
@@ -562,47 +551,47 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
 
 static ALCboolean opensles_start_playback(ALCdevice *pDevice)
 {
-    LOGV("opensles_start_playback device=%p", pDevice);
+    TRACE("opensles_start_playback device=%p", pDevice);
     return start_playback(pDevice);
 }
 
 
 static void opensles_stop_playback(ALCdevice *pDevice)
 {
-    LOGV("opensles_stop_playback device=%p", pDevice);
+    TRACE("opensles_stop_playback device=%p", pDevice);
     stop_playback(pDevice);
 }
 
 static ALCenum opensles_open_capture(ALCdevice *pDevice, const ALCchar *deviceName)
 {
-    LOGV("opensles_open_capture  device=%p, deviceName=%s", pDevice, deviceName);
+    TRACE("opensles_open_capture  device=%p, deviceName=%s", pDevice, deviceName);
     return ALC_NO_ERROR;
 }
 
 static void opensles_close_capture(ALCdevice *pDevice)
 {
-    LOGV("opensles_closed_capture device=%p", pDevice);
+    TRACE("opensles_closed_capture device=%p", pDevice);
 }
 
 static void opensles_start_capture(ALCdevice *pDevice)
 {
-    LOGV("opensles_start_capture device=%p", pDevice);
+    TRACE("opensles_start_capture device=%p", pDevice);
 }
 
 static void opensles_stop_capture(ALCdevice *pDevice)
 {
-    LOGV("opensles_stop_capture device=%p", pDevice);
+    TRACE("opensles_stop_capture device=%p", pDevice);
 }
 
 static ALCenum opensles_capture_samples(ALCdevice *pDevice, ALCvoid *pBuffer, ALCuint lSamples)
 {
-    LOGV("opensles_capture_samples device=%p, pBuffer=%p, lSamples=%u", pDevice, pBuffer, lSamples);
+    TRACE("opensles_capture_samples device=%p, pBuffer=%p, lSamples=%u", pDevice, pBuffer, lSamples);
     return ALC_NO_ERROR;
 }
 
 static ALCuint opensles_available_samples(ALCdevice *pDevice)
 {
-    LOGV("opensles_available_samples device=%p", pDevice);
+    TRACE("opensles_available_samples device=%p", pDevice);
     return 0;
 }
 
@@ -618,7 +607,7 @@ void opensles_device_unlock(ALCdevice *pDevice)
 
 ALint64 opensles_get_latency(ALCdevice *pDevice)
 {
-    LOGV("opensles_get_latency device=%p", pDevice);
+    TRACE("opensles_get_latency device=%p", pDevice);
     return 0;
 }
 
@@ -750,7 +739,7 @@ static void alc_opensl_set_java_vm(JavaVM *vm)
         android_model = alc_opensl_get_android_model();
         for (i = 0; low_buffer_models[i] != NULL; i++) {
             if (strncmp(android_model, low_buffer_models[i], strlen(low_buffer_models[i])) == 0) {
-                LOGV("Using less buffering");
+                TRACE("Using less buffering");
                 defaultBufferSize = 1024;
                 bufferSize = 1024;
                 premixCount = 1;
@@ -762,7 +751,7 @@ static void alc_opensl_set_java_vm(JavaVM *vm)
 
 ALCboolean alc_opensl_init(BackendFuncs *func_list)
 {
-    LOGV("alc_opensl_init");
+    TRACE("alc_opensl_init");
 
     struct stat statinfo;
     if (stat("/system/lib/libOpenSLES.so", &statinfo) != 0) {
@@ -781,7 +770,7 @@ ALCboolean alc_opensl_init(BackendFuncs *func_list)
 
 void alc_opensl_deinit(void)
 {
-    LOGV("alc_opensl_deinit");
+    TRACE("alc_opensl_deinit");
 
     // destroy output mix object, and invalidate all associated interfaces
     if (outputMixObject != NULL) {
@@ -802,14 +791,14 @@ void alc_opensl_probe(enum DevProbe type)
     char *error;
     struct stat statinfo;
     if (stat("/system/lib/libOpenSLES.so", &statinfo) != 0) {
-        LOGV("alc_opensl_probe OpenSLES support not found.");
+        TRACE("alc_opensl_probe OpenSLES support not found.");
         return;
     }
 
     dlerror(); // Clear dl errors
     void *dlHandle = dlopen("/system/lib/libOpenSLES.so", RTLD_NOW | RTLD_GLOBAL);
     if (!dlHandle || (error = (typeof(error))dlerror()) != NULL) {
-        LOGV("OpenSLES could not be loaded.");
+        TRACE("OpenSLES could not be loaded.");
         return;
     }
 
@@ -817,7 +806,7 @@ void alc_opensl_probe(enum DevProbe type)
     do { \
         p##sym = dlsym(dlHandle, #sym); \
         if((error=(typeof(error))dlerror()) != NULL) { \
-            LOGV("alc_opensl_probe could not load %s, error: %s", #sym, error); \
+            TRACE("alc_opensl_probe could not load %s, error: %s", #sym, error); \
             dlclose(dlHandle); \
             return; \
         } \
@@ -834,15 +823,15 @@ void alc_opensl_probe(enum DevProbe type)
 
     switch (type) {
     // case DEVICE_PROBE:
-    //     LOGV("alc_opensl_probe DEVICE_PROBE");
+    //     TRACE("alc_opensl_probe DEVICE_PROBE");
     //     AppendDeviceList(opensles_device);
     //     break;
     case ALL_DEVICE_PROBE:
-        LOGV("alc_opensl_probe ALL_DEVICE_PROBE");
+        TRACE("alc_opensl_probe ALL_DEVICE_PROBE");
         AppendAllDevicesList(opensl_device);
         break;
     default:
-        LOGV("alc_opensl_probe type=%d", type);
+        TRACE("alc_opensl_probe type=%d", type);
         break;
     }
 }
