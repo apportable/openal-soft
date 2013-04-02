@@ -139,6 +139,10 @@
 /* Define if we have pthread_setschedparam() */
 #define HAVE_PTHREAD_SETSCHEDPARAM 1
 
+#define DEFAULT_DEVICE_FMT_CHANS DevFmtStereo
+#define DEFAULT_DEVICE_FMT_TYPE DevFmtShort
+#define DEFAULT_DEVICE_FREQUENCY DEFAULT_OUTPUT_RATE
+
 // Skip trying to read a config file in Android builds
 #define HAVE_NO_CONFIG_FILE
 

@@ -2720,9 +2720,23 @@ ALC_API ALCdevice* ALC_APIENTRY alcOpenDevice(const ALCchar *deviceName)
     InitUIntMap(&device->FilterMap, ~0);
 
     //Set output format
+#ifdef DEFAULT_DEVICE_FMT_CHANS
+    device->FmtChans = DEFAULT_DEVICE_FMT_CHANS;
+#else
     device->FmtChans = DevFmtChannelsDefault;
+#endif
+
+#ifdef DEFAULT_DEVICE_FMT_TYPE
+    device->FmtType = DEFAULT_DEVICE_FMT_TYPE;
+#else
     device->FmtType = DevFmtTypeDefault;
+#endif
+
+#ifdef DEFAULT_DEVICE_FREQUENCY
+    device->Frequency = DEFAULT_DEVICE_FREQUENCY;
+#else
     device->Frequency = DEFAULT_OUTPUT_RATE;
+#endif
     device->NumUpdates = 4;
     device->UpdateSize = 1024;
 
