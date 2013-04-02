@@ -170,6 +170,9 @@ typedef struct ALsource
     /** Source needs to update its mixing parameters. */
     volatile ALenum NeedsUpdate;
 
+    // Apportably Extension
+    ALuint    priority;
+
     /** Method to update mixing parameters. */
     ALvoid (*Update)(struct ALsource *self, const ALCcontext *context);
 

@@ -172,6 +172,9 @@ AL_API ALvoid AL_APIENTRY alListeneri(ALenum param, ALint value)
     {
         switch(param)
         {
+            case AL_PRIORITY_SLOTS:
+                Context->PrioritySlots = (ALsizei)value;
+                break;
             default:
                 al_throwerr(Context, AL_INVALID_ENUM);
         }
@@ -382,6 +385,9 @@ AL_API ALvoid AL_APIENTRY alGetListeneri(ALenum param, ALint *value)
         CHECK_VALUE(Context, value);
         switch(param)
         {
+            case AL_PRIORITY_SLOTS:
+                *value = (ALint)Context->PrioritySlots;
+                break;
             default:
                 al_throwerr(Context, AL_INVALID_ENUM);
         }

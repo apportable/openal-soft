@@ -704,6 +704,9 @@ struct ALCcontext_struct
     ALsizei               ActiveEffectSlotCount;
     ALsizei               MaxActiveEffectSlots;
 
+    // Apportable Extension
+    ALsizei           PrioritySlots;
+
     ALCdevice  *Device;
     const ALCchar *ExtensionList;
 
@@ -866,6 +869,20 @@ void FillCPUCaps(ALuint capfilter);
     if(!(cond))                                                               \
         al_throwerr((ctx), AL_INVALID_VALUE);                                 \
 } while(0)
+
+#if !defined(max)
+#define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+      __typeof__ (b) _b = (b); \
+      _a > _b ? _a : _b; })
+#endif
+
+#if !defined(min)
+#define min(c,d) \
+   ({ __typeof__ (c) _c = (c); \
+      __typeof__ (d) _d = (d); \
+      _c < _d ? _c : _d; })
+#endif
 
 #ifdef __cplusplus
 }

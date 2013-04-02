@@ -36,6 +36,12 @@
 
 #include "mixer_defs.h"
 
+#ifdef MAX_SOURCES_LOW
+// For throttling AlSource.c
+int alc_max_sources = MAX_SOURCES_LOW;
+int alc_active_sources = 0;
+int alc_num_cores = 0;
+#endif
 
 struct ChanMap {
     enum Channel channel;
@@ -966,8 +972,7 @@ DECL_TEMPLATE(ALbyte, aluF2B)
 
 #undef DECL_TEMPLATE
 
-
-ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
+static __inline ALvoid aluMixDataPrivate(ALCdevice *device, ALvoid *buffer, ALsizei size)
 {
     ALuint SamplesToDo;
     ALeffectslot **slot, **slot_end;
@@ -1172,6 +1177,69 @@ ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
     RestoreFPUMode(&oldMode);
 }
 
+#ifdef MAX_SOURCES_LOW
+static long timespecdiff(struct timespec *starttime, struct timespec *finishtime)
+{
+  long msec;
+  msec=(finishtime->tv_sec-starttime->tv_sec)*1000;
+  msec+=(finishtime->tv_nsec-starttime->tv_nsec)/1000000;
+  return msec;
+}
+#endif
+
+ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
+{
+#ifdef MAX_SOURCES_LOW
+    // Profile aluMixDataPrivate to set admission control parameters
+    static struct timespec ts_start;
+    static struct timespec ts_end;
+    long ts_diff;
+    int time_per_source;
+    int max_sources_within_deadline;
+    int mix_deadline_usec;
+    int max;
+
+    if (alc_num_cores == 0) {
+        // FIXME this is Linux specific
+        alc_num_cores = sysconf( _SC_NPROCESSORS_ONLN );
+        TRACE("_SC_NPROCESSORS_ONLN=%d", alc_num_cores);
+    }
+
+    if (alc_num_cores >= 4) {
+        // Allow OpenAL to monopolize one core
+        mix_deadline_usec = (((size*1000000) / device->Frequency) * 4) / 5;
+    } else if (alc_num_cores >= 2) {
+        // Try to cap mixing at ~50% CPU
+        mix_deadline_usec = ((size*1000000) / device->Frequency) / 2;
+    } else {
+        // Try to cap mixing at ~20% CPU
+        mix_deadline_usec = ((size*1000000) / device->Frequency) / 5;
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &ts_start);
+    aluMixDataPrivate(device, buffer,  size);
+    clock_gettime(CLOCK_MONOTONIC, &ts_end);
+
+    // Time in micro-seconds that aluMixData has taken to run
+    ts_diff = timespecdiff(&ts_start, &ts_end);
+
+    // Try to adjust the max sources limit adaptively, within a range
+    if (alc_active_sources > 0) {
+        time_per_source = max(1, ts_diff / alc_active_sources);
+        max_sources_within_deadline = mix_deadline_usec / time_per_source;
+        max = min(max(max_sources_within_deadline, MAX_SOURCES_LOW), MAX_SOURCES_HIGH);
+        if (max > alc_max_sources) {
+            alc_max_sources++;
+        } else if (max < alc_max_sources) {
+            alc_max_sources = max;
+        }
+    } else {
+        alc_max_sources = MAX_SOURCES_START;
+    }
+#else
+    aluMixDataPrivate(device, buffer,  size);
+#endif
+}
 
 ALvoid aluHandleDisconnect(ALCdevice *device)
 {

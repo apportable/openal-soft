@@ -33,6 +33,11 @@
 #include "alThunk.h"
 #include "alAuxEffectSlot.h"
 
+#ifdef MAX_SOURCES_LOW
+// Apportable: Defines a cap on the maximum number of playing sources
+extern int alc_max_sources;
+extern int alc_active_sources;
+#endif
 
 enum Resampler DefaultResampler = LinearResampler;
 const ALsizei ResamplerPadding[ResamplerMax] = {
@@ -1935,9 +1940,22 @@ AL_API ALvoid AL_APIENTRY alSourcePlayv(ALsizei n, const ALuint *sources)
         for(i = 0;i < n;i++)
         {
             Source = LookupSource(Context, sources[i]);
+
+#ifdef MAX_SOURCES_LOW
+            if (Context->ActiveSourceCount >= (alc_max_sources - Context->PrioritySlots) && Source->priority < 127) {
+                TRACE("Skipping starting source %d due to lack of CPU time.", sources[i]);
+                continue;
+            }
+#endif
+
             if(Context->DeferUpdates) Source->new_state = AL_PLAYING;
             else SetSourceState(Source, Context, AL_PLAYING);
         }
+
+#ifdef MAX_SOURCES_LOW
+        // Need to give the ALC platform code a hint for setting Source limit based on performance
+        alc_active_sources = Context->ActiveSourceCount;
+#endif
         UnlockContext(Context);
     }
     al_endtry;

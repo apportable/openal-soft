@@ -449,6 +449,24 @@ AL_API void AL_APIENTRY alDistanceModel(ALenum distanceModel);
 #define AL_EXPONENT_DISTANCE                     0xD005
 #define AL_EXPONENT_DISTANCE_CLAMPED             0xD006
 
+/**
+ * Priority
+ *
+ * Apportable Extension.
+ * Used to prevent dynamic throttling of this source
+ * Set via alSourcei
+ */
+#define AL_PRIORITY                               0xE001
+
+/**
+ * Priority Slots
+ *
+ * Apportable Extension.
+ * Used to provide dedicated CPU time for Priority Sources
+ * Set via alListeneri
+ */
+#define AL_PRIORITY_SLOTS                         0xE002
+
 /** Renderer State management. */
 AL_API void AL_APIENTRY alEnable(ALenum capability);
 AL_API void AL_APIENTRY alDisable(ALenum capability);

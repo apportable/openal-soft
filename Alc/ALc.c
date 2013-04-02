@@ -599,6 +599,9 @@ static const ALCenums enumeration[] = {
 
     DECL(AL_DEDICATED_GAIN),
 
+    DECL(AL_PRIORITY),
+    DECL(AL_PRIORITY_SLOTS),
+
     { NULL, (ALCenum)0 }
 };
 #undef DECL
@@ -1877,6 +1880,7 @@ static ALvoid InitContext(ALCcontext *Context)
     Context->DopplerFactor = 1.0f;
     Context->DopplerVelocity = 1.0f;
     Context->SpeedOfSound = SPEEDOFSOUNDMETRESPERSEC;
+    Context->PrioritySlots = 0;
     Context->DeferUpdates = AL_FALSE;
 
     Context->ExtensionList = alExtList;
@@ -1915,6 +1919,7 @@ static ALCvoid FreeContext(ALCcontext *context)
     free(context->ActiveEffectSlots);
     context->ActiveEffectSlots = NULL;
     context->MaxActiveEffectSlots = 0;
+    context->PrioritySlots = 0;
 
     ALCdevice_DecRef(context->Device);
     context->Device = NULL;
