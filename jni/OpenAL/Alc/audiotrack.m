@@ -1,6 +1,10 @@
 /**
  * OpenAL cross platform audio library
+ *
+ * Copyright 2013 Apportable Inc.
+ *
  * Copyright (C) 2010 by Chris Robinson
+ *
  * This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Library General Public
  *  License as published by the Free Software Foundation; either
@@ -28,8 +32,8 @@
 #import "AL/alc.h"
 
 #import "apportable_openal_funcs.h"
-#import <BridgeKit/JavaObject.h>
 #import <BridgeKit/JavaClass.h>
+#import <BridgeKit/AndroidAudioTrack.h>
 
 static const ALCchar android_device[] = "Android Default";
 
@@ -42,33 +46,6 @@ typedef struct
     pthread_t thread;
     volatile int running;
 } AndroidData;
-
-@interface AndroidAudioTrack : JavaObject
-- (id)initWithStreamType:(int)streamType sampleRate:(int)sampleRate channelConfig:(int)channelConfig audioFormat:(int)audioFormat bufferSize:(int)bufferSize mode:(int)mode;
-+ (int)minBufferSizeWithSampleRate:(int)sampleRate channelConfig:(int)channelConfig audioFormat:(int)audioFormat;
-- (void)play;
-- (void)pause;
-- (void)stop;
-- (void)release;
-@end
-
-@implementation AndroidAudioTrack
-+ (void)initializeJava
-{
-    [super initializeJava];
-
-    [AndroidAudioTrack registerConstructorWithSelector:@selector(initWithStreamType:sampleRate:channelConfig:audioFormat:bufferSize:mode:) arguments:[JavaClass intPrimitive], [JavaClass intPrimitive], [JavaClass intPrimitive], [JavaClass intPrimitive], [JavaClass intPrimitive], [JavaClass intPrimitive], NULL];
-    [AndroidAudioTrack registerStaticMethod:@"getMinBufferSize" selector:@selector(minBufferSizeWithSampleRate:channelConfig:audioFormat:) returnValue:[JavaClass intPrimitive] arguments:[JavaClass intPrimitive], [JavaClass intPrimitive], [JavaClass intPrimitive], NULL];
-    [AndroidAudioTrack registerInstanceMethod:@"play" selector:@selector(play) returnValue:NULL arguments:NULL];
-    [AndroidAudioTrack registerInstanceMethod:@"pause" selector:@selector(pause) returnValue:NULL arguments:NULL];
-    [AndroidAudioTrack registerInstanceMethod:@"stop" selector:@selector(stop) returnValue:NULL arguments:NULL];
-    [AndroidAudioTrack registerInstanceMethod:@"release" selector:@selector(release) returnValue:NULL arguments:NULL];
-}
-+ (NSString *)className
-{
-    return @"android.media.AudioTrack";
-}
-@end
 
 #define STREAM_MUSIC 3
 #define CHANNEL_CONFIGURATION_MONO 2

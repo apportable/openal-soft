@@ -707,7 +707,7 @@ void alc_opensles_init(BackendFuncs *func_list)
     LOGV("alc_opensles_init");
 
     struct stat statinfo;
-    if (1 || stat("/system/lib/libOpenSLES.so", &statinfo) != 0) {
+    if (stat("/system/lib/libOpenSLES.so", &statinfo) != 0) {
         return;
     }
 
@@ -741,7 +741,7 @@ void alc_opensles_probe(int type)
 {
     char *error;
     struct stat statinfo;
-    if (1 || stat("/system/lib/libOpenSLES.so", &statinfo) != 0) {
+    if (stat("/system/lib/libOpenSLES.so", &statinfo) != 0) {
         LOGV("alc_opensles_probe OpenSLES support not found.");
         return;
     }
