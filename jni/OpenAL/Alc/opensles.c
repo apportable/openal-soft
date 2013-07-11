@@ -221,7 +221,6 @@ static void *playback_function(void * context) {
     outputBuffer_t *buffer = NULL;
     SLresult result;
     struct timespec ts;
-    int rc;
     assert(NULL != context);
     ALCdevice *pDevice = (ALCdevice *) context;
     opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
@@ -263,7 +262,7 @@ static void *playback_function(void * context) {
             // or until playback is stopped/suspended
             clock_gettime(CLOCK_REALTIME, &ts);
             ts.tv_nsec += 5000000;
-            rc = pthread_cond_timedwait(&(buffer->cond), &(buffer->mutex), &ts);
+            pthread_cond_timedwait(&(buffer->cond), &(buffer->mutex), &ts);
         }
         devState->threadIsReady = 1;
 
@@ -320,6 +319,8 @@ static void start_playback(ALCdevice *pDevice) {
 
     if (pDevice->ExtraData == NULL) {
         alc_opensles_init_extradata(pDevice);
+        devState = pDevice->ExtraData;
+        assert(devState != NULL);
     } else {
         devState = (opesles_data_t *) pDevice->ExtraData;
     }
@@ -390,13 +391,15 @@ static void opensles_callback(SLAndroidSimpleBufferQueueItf bq, void *context)
         }
     }
 
-    result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, buffer->buffer, bufferSize);
-    if (SL_RESULT_SUCCESS == result) {
-        buffer->state = OUTPUT_BUFFER_STATE_ENQUEUED;
-        devState->lastBufferEnqueued = bufferIndex;
-        pthread_cond_signal(&(buffer->cond));
-    } else {
-        bufferIndex--;
+    if (devState->bqPlayerBufferQueue) {
+        result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, buffer->buffer, bufferSize);
+        if (SL_RESULT_SUCCESS == result) {
+            buffer->state = OUTPUT_BUFFER_STATE_ENQUEUED;
+            devState->lastBufferEnqueued = bufferIndex;
+            pthread_cond_signal(&(buffer->cond));
+        } else {
+            bufferIndex--;
+        }
     }
     pthread_mutex_unlock(&(buffer->mutex));
 }
@@ -439,7 +442,6 @@ SLresult alc_opensles_create_native_audio_engine()
 static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *deviceName)
 {
     LOGV("opensles_open_playback pDevice=%p, deviceName=%s", pDevice, deviceName);
-    opesles_data_t *devState;
 
     // Check if probe has linked the opensl symbols
     if (pslCreateEngine == NULL) {
@@ -451,12 +453,10 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
 
     if (pDevice->ExtraData == NULL) {
         alc_opensles_init_extradata(pDevice);
-    } else {
-        devState = (opesles_data_t *) pDevice->ExtraData;
     }
 
     // create the engine and output mix objects
-    SLresult result = alc_opensles_create_native_audio_engine();
+    alc_opensles_create_native_audio_engine();
 
     return ALC_TRUE;
 }
@@ -519,7 +519,9 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     const SLboolean req[1] = {SL_BOOLEAN_TRUE};
     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &devState->bqPlayerObject, &audioSrc, &audioSnk,
         1, ids, req);
-    assert(SL_RESULT_SUCCESS == result);
+    if ((result != SL_RESULT_SUCCESS) || (devState->bqPlayerObject == NULL)) {
+        return ALC_FALSE;
+    }
 
     // realize the player
     result = (*devState->bqPlayerObject)->Realize(devState->bqPlayerObject, SL_BOOLEAN_FALSE);
@@ -532,7 +534,9 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     // get the buffer queue interface
     result = (*devState->bqPlayerObject)->GetInterface(devState->bqPlayerObject, *pSL_IID_BUFFERQUEUE,
             &devState->bqPlayerBufferQueue);
-    assert(SL_RESULT_SUCCESS == result);
+    if ((result != SL_RESULT_SUCCESS) || (devState->bqPlayerObject == NULL)) {
+        return ALC_FALSE;
+    }
 
     // register callback on the buffer queue
     result = (*devState->bqPlayerBufferQueue)->RegisterCallback(devState->bqPlayerBufferQueue, opensles_callback, (void *) pDevice);
@@ -619,9 +623,10 @@ static void suspend_device(ALCdevice *pDevice) {
         opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
         if (devState->bqPlayerPlay) {
             result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PAUSED);
-            assert(SL_RESULT_SUCCESS == result);
-            result = (*devState->bqPlayerBufferQueue)->Clear(devState->bqPlayerBufferQueue);
-            assert(SL_RESULT_SUCCESS == result);
+            if ((SL_RESULT_SUCCESS == result) && (devState->bqPlayerBufferQueue)) {
+                result = (*devState->bqPlayerBufferQueue)->Clear(devState->bqPlayerBufferQueue);
+                assert(SL_RESULT_SUCCESS == result);
+            }
         }
         stop_playback(pDevice);
     }
@@ -633,10 +638,11 @@ static void resume_device(ALCdevice *pDevice) {
         opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
         if (devState->bqPlayerPlay) {
             result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PLAYING);
-            assert(SL_RESULT_SUCCESS == result);
             // Pump some blank data into the buffer to stimulate the callback
-            result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, "\0", 1);
-            assert(SL_RESULT_SUCCESS == result);
+            if ((SL_RESULT_SUCCESS == result) && (devState->bqPlayerBufferQueue)) {
+                result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, "\0", 1);
+                assert(SL_RESULT_SUCCESS == result);
+            }
         }
         start_playback(pDevice);
      }
