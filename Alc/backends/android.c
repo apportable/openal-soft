@@ -2,6 +2,7 @@
 #include "config.h"
 #include "AL/alc.h"
 #include <jni.h>
+#include <stddef.h>
 
 // #include "alMain.h"
 #include "android_openal_funcs.h"
