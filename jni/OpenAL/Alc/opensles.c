@@ -484,6 +484,10 @@ static void opensles_close_playback(ALCdevice *pDevice)
 
 static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
 {
+    if (pDevice == NULL) {
+        LOGE("Received a NULL ALCdevice! Returning ALC_FALSE from opensles_reset_playback");
+        return ALC_FALSE;
+    }
     LOGV("opensles_reset_playback pDevice=%p", pDevice);
     opesles_data_t *devState;
     unsigned bits = BytesFromDevFmt(pDevice->FmtType) * 8;
