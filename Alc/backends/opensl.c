@@ -154,6 +154,7 @@ typedef struct outputBuffer_s {
 
 
 typedef struct {
+    pthread_mutex_t mutex;
     pthread_t playbackThread;
     char threadShouldRun;
     char threadIsReady;
@@ -278,6 +279,11 @@ SLresult alc_opensl_init_extradata(ALCdevice *pDevice)
     devState = malloc(sizeof(opesles_data_t));
     if (!devState) {
         return SL_RESULT_MEMORY_FAILURE;
+    }
+    if (pthread_mutex_init(&(devState->mutex), (pthread_mutexattr_t*) NULL) != 0) {
+        TRACE("Error on init of mutex");
+        free(devState);
+        return SL_RESULT_UNKNOWN_ERROR;
     }
     bzero(devState, sizeof(opesles_data_t));
     devState->outputBuffers = (outputBuffer_t*) malloc(sizeof(outputBuffer_t)*bufferCount);
@@ -597,12 +603,24 @@ static ALCuint opensles_available_samples(ALCdevice *pDevice)
 
 void opensles_device_lock(ALCdevice *pDevice)
 {
-    // No-op
+    opesles_data_t *devState;
+    if (pDevice && pDevice->ExtraData) {
+        devState = (opesles_data_t *) pDevice->ExtraData;
+        pthread_mutex_lock(&(devState->mutex));
+    } else {
+        TRACE("Failed to lock device=%p", pDevice);
+    }
 }
 
 void opensles_device_unlock(ALCdevice *pDevice)
 {
-    // No-op
+    opesles_data_t *devState;
+    if (pDevice && pDevice->ExtraData) {
+        devState = (opesles_data_t *) pDevice->ExtraData;
+        pthread_mutex_unlock(&(devState->mutex));
+    } else {
+        TRACE("Failed to unlock device=%p", pDevice);
+    }
 }
 
 ALint64 opensles_get_latency(ALCdevice *pDevice)
