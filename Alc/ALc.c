@@ -81,7 +81,7 @@ static struct BackendInfo BackendList[] = {
     { "opensl", alc_opensl_init, alc_opensl_deinit, alc_opensl_probe, EmptyFuncs },
 #endif
 #ifdef HAVE_AUDIOTRACK
-    { "audiotrace", alc_audiotrack_init, alc_audiotrack_deinit, alc_audiotrack_probe, EmptyFuncs },
+    { "audiotrack", alc_audiotrack_init, alc_audiotrack_deinit, alc_audiotrack_probe, EmptyFuncs },
 #endif
     { "null", alc_null_init, alc_null_deinit, alc_null_probe, EmptyFuncs },
 #ifdef HAVE_WAVE

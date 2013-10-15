@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <jni.h>
 #include <pthread.h>
+#include <sys/prctl.h>
 #include "alMain.h"
 #include "AL/al.h"
 #include "AL/alc.h"
@@ -69,6 +70,9 @@ static void* thread_function(void* arg)
     ALCdevice* device = (ALCdevice*)arg;
     AndroidData* data = (AndroidData*)device->ExtraData;
     
+    // Show a sensible name for the thread in debug tools
+    prctl(PR_SET_NAME, (unsigned long)"OpenAL/AudioTrack", 0, 0, 0);
+
     JavaVM *javaVM = alcGetJavaVM();
     (*javaVM)->AttachCurrentThread(javaVM, &env, NULL);
 
