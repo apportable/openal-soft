@@ -32,6 +32,8 @@
 
 static const ALCchar android_device[] = "Android Default";
 
+static pthread_mutex_t deviceMutex = PTHREAD_MUTEX_INITIALIZER;
+
 JavaVM* alcGetJavaVM(void);
 static JNIEnv* env;
 
@@ -269,12 +271,12 @@ static ALCuint android_available_samples(ALCdevice *pDevice)
 
 void android_device_lock(ALCdevice *pDevice)
 {
-    // No-op
+    pthread_mutex_lock(&(deviceMutex));
 }
 
 void android_device_unlock(ALCdevice *pDevice)
 {
-    // No-op
+    pthread_mutex_unlock(&(deviceMutex));
 }
 
 ALint64 android_get_latency(ALCdevice *pDevice)
