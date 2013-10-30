@@ -59,6 +59,23 @@ MAKE_SYM_POINTER(SL_IID_PLAY);
 MAKE_SYM_POINTER(SL_IID_BUFFERQUEUE);
 MAKE_SYM_POINTER(slCreateEngine);
 
+#define SL_RESULT_CHECK(error, return_value, message) {    \
+    if (SL_RESULT_SUCCESS != error) {                      \
+        LOGV("OpenSLES error %d:%s", (int)error, message); \
+        {                                                  \
+            SLresult _result = (return_value);             \
+            if (_result)                                   \
+                return (_result);                          \
+        }                                                  \
+    }                                                      \
+}
+
+#define SL_RESULT_LOG(error, message) {                    \
+    if (SL_RESULT_SUCCESS != error) {                      \
+        LOGV("OpenSLES error %d:%s", (int)error, message); \
+    }                                                      \
+}
+
 // engine interfaces
 static SLObjectItf engineObject = NULL;
 static SLEngineItf engineEngine;
@@ -318,7 +335,9 @@ static void start_playback(ALCdevice *pDevice) {
 	int i;
 
     if (pDevice->ExtraData == NULL) {
-        alc_opensles_init_extradata(pDevice);
+        if (SL_RESULT_SUCCESS != alc_opensles_init_extradata(pDevice)) {
+            LOGV("Failed to initialize OpenSLES extra data");
+        }
         devState = pDevice->ExtraData;
         assert(devState != NULL);
     } else {
@@ -417,23 +436,23 @@ SLresult alc_opensles_create_native_audio_engine()
 
     // create engine
     result = pslCreateEngine(&engineObject, 0, NULL, 0, NULL, NULL);
-    assert(SL_RESULT_SUCCESS == result);
+    SL_RESULT_CHECK(result, ALC_FALSE, "Failed to create OpenSLES engine object");
 
     // realize the engine
     result = (*engineObject)->Realize(engineObject, SL_BOOLEAN_FALSE);
-    assert(SL_RESULT_SUCCESS == result);
+    SL_RESULT_CHECK(result, ALC_FALSE, "Failed to realize OpenSLES engine object");
 
     // get the engine interface, which is needed in order to create other objects
     result = (*engineObject)->GetInterface(engineObject, *pSL_IID_ENGINE, &engineEngine);
-    assert(SL_RESULT_SUCCESS == result);
+    SL_RESULT_CHECK(result, ALC_FALSE, "Failed to get interface of OpenSLES engine");
 
     // create output mix
     result = (*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 0, NULL, NULL);
-    assert(SL_RESULT_SUCCESS == result);
+    SL_RESULT_CHECK(result, ALC_FALSE, "Failed to create OpenSLES mixer object");
 
     // realize the output mix
     result = (*outputMixObject)->Realize(outputMixObject, SL_BOOLEAN_FALSE);
-    assert(SL_RESULT_SUCCESS == result);
+    SL_RESULT_CHECK(result, ALC_FALSE, "Failed to realize OpenSLES mixer object");
 
     return result;
 }
@@ -452,11 +471,17 @@ static ALCboolean opensles_open_playback(ALCdevice *pDevice, const ALCchar *devi
     }
 
     if (pDevice->ExtraData == NULL) {
-        alc_opensles_init_extradata(pDevice);
+        if (SL_RESULT_SUCCESS != alc_opensles_init_extradata(pDevice)) {
+            LOGV("Failed to initialize OpenSLES extra data");
+            return ALC_FALSE;
+        }
     }
 
     // create the engine and output mix objects
-    alc_opensles_create_native_audio_engine();
+    if (SL_RESULT_SUCCESS != alc_opensles_create_native_audio_engine()) {
+        LOGV("Failed to create OpenSLES audio engine");
+        return ALC_FALSE;
+    }
 
     return ALC_TRUE;
 }
@@ -503,6 +528,18 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
 
     devState = (opesles_data_t *) pDevice->ExtraData;
 
+    if (devState == NULL)
+        return ALC_FALSE;
+
+    if (devState->bqPlayerObject == NULL ||
+        devState->bqPlayerPlay == NULL ||
+        devState->bqPlayerBufferQueue == NULL) {
+        result = opensles_open_playback(pDevice, "");
+        if (!result) {
+            return ALC_FALSE;
+        }
+    }
+
     // create buffer queue audio player
 
     // configure audio source
@@ -524,40 +561,40 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &devState->bqPlayerObject, &audioSrc, &audioSnk,
         1, ids, req);
     if ((result != SL_RESULT_SUCCESS) || (devState->bqPlayerObject == NULL)) {
-        RELEASE_LOG("create audio player is null or errored: %lx", result);
+        RELEASE_LOG("Failed to create OpenSLES player object: %lx", result);
         return ALC_FALSE;
     }
 
     // realize the player
     result = (*devState->bqPlayerObject)->Realize(devState->bqPlayerObject, SL_BOOLEAN_FALSE);
-    assert(SL_RESULT_SUCCESS == result);
+    SL_RESULT_CHECK(result, ALC_FALSE, "Failed to realize OpenSLES player object");
 
     // get the play interface
     result = (*devState->bqPlayerObject)->GetInterface(devState->bqPlayerObject, *pSL_IID_PLAY, &devState->bqPlayerPlay);
-    assert(SL_RESULT_SUCCESS == result);
+    SL_RESULT_CHECK(result, ALC_FALSE, "Failed to get interface of OpenSLES player object");
 
     // get the buffer queue interface
     result = (*devState->bqPlayerObject)->GetInterface(devState->bqPlayerObject, *pSL_IID_BUFFERQUEUE,
             &devState->bqPlayerBufferQueue);
     if ((result != SL_RESULT_SUCCESS) || (devState->bqPlayerBufferQueue == NULL)) {
-        RELEASE_LOG("get the buffer queue interface is null or errored: %lx", result);
+        RELEASE_LOG("Failed to get interface of OpenSLES player queue: %lx", result);
         return ALC_FALSE;
     }
 
     // register callback on the buffer queue
     result = (*devState->bqPlayerBufferQueue)->RegisterCallback(devState->bqPlayerBufferQueue, opensles_callback, (void *) pDevice);
-    assert(SL_RESULT_SUCCESS == result);
+    SL_RESULT_CHECK(result, ALC_FALSE, "Failed to register callback on OpenSLES player queue");
 
     // playback_lock = createThreadLock();
     start_playback(pDevice);
 
     // set the player's state to playing
     result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PLAYING);
-    assert(SL_RESULT_SUCCESS == result);
+    SL_RESULT_CHECK(result, ALC_FALSE, "Failed to set play state on OpenSLES player interface");
 
     // enqueue the first buffer to kick off the callbacks
     result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, "\0", 1);
-    assert(SL_RESULT_SUCCESS == result);
+    SL_RESULT_CHECK(result, ALC_FALSE, "Failed to enqeueu on OpenSLES player queue");
 
 
     SetDefaultWFXChannelOrder(pDevice);
@@ -629,9 +666,10 @@ static void suspend_device(ALCdevice *pDevice) {
         opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
         if (devState->bqPlayerPlay) {
             result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PAUSED);
+            SL_RESULT_LOG(result, "Failed to set pause OpenSLES player");
             if ((SL_RESULT_SUCCESS == result) && (devState->bqPlayerBufferQueue)) {
                 result = (*devState->bqPlayerBufferQueue)->Clear(devState->bqPlayerBufferQueue);
-                assert(SL_RESULT_SUCCESS == result);
+                SL_RESULT_LOG(result, "Failed to clear OpenSLES player queue");
             }
         }
         stop_playback(pDevice);
@@ -644,15 +682,16 @@ static void resume_device(ALCdevice *pDevice) {
         opesles_data_t *devState = (opesles_data_t *) pDevice->ExtraData;
         if (devState->bqPlayerPlay) {
             result = (*devState->bqPlayerPlay)->SetPlayState(devState->bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+            SL_RESULT_LOG(result, "Failed to resume OpenSLES player");
             // Pump some blank data into the buffer to stimulate the callback
             if ((SL_RESULT_SUCCESS == result) && (devState->bqPlayerBufferQueue)) {
                 result = (*devState->bqPlayerBufferQueue)->Enqueue(devState->bqPlayerBufferQueue, "\0", 1);
-                assert(SL_RESULT_SUCCESS == result);
+                SL_RESULT_LOG(result, "Failed to restart OpenSLES player queue");
             }
         }
         start_playback(pDevice);
-     }
- }
+    }
+}
 
 void alc_opensles_suspend()
 {
