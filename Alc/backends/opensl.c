@@ -58,11 +58,7 @@ MAKE_SYM_POINTER(slCreateEngine);
 #define SL_RESULT_CHECK(error, return_value, message) {   \
     if (SL_RESULT_SUCCESS != error) {                     \
         ERR("OpenSLES error %d:%s", (int)error, message); \
-        {                                                 \
-            SLresult _result = (return_value);            \
-            if (_result)                                  \
-                return (_result);                         \
-        }                                                 \
+        return (return_value);                            \
     }                                                     \
 }
 
