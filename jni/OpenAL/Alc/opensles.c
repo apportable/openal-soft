@@ -63,9 +63,7 @@ MAKE_SYM_POINTER(slCreateEngine);
     if (SL_RESULT_SUCCESS != error) {                      \
         LOGV("OpenSLES error %d:%s", (int)error, message); \
         {                                                  \
-            SLresult _result = (return_value);             \
-            if (_result)                                   \
-                return (_result);                          \
+            return (return_value);                         \
         }                                                  \
     }                                                      \
 }
