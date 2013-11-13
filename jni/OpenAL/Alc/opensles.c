@@ -59,6 +59,21 @@ MAKE_SYM_POINTER(SL_IID_PLAY);
 MAKE_SYM_POINTER(SL_IID_BUFFERQUEUE);
 MAKE_SYM_POINTER(slCreateEngine);
 
+#define SL_RESULT_CHECK(error, return_value, message) {    \
+    if (SL_RESULT_SUCCESS != error) {                      \
+        LOGV("OpenSLES error %d:%s", (int)error, message); \
+        {                                                  \
+            return (return_value);                         \
+        }                                                  \
+    }                                                      \
+}
+
+#define SL_RESULT_LOG(error, message) {                    \
+    if (SL_RESULT_SUCCESS != error) {                      \
+        LOGV("OpenSLES error %d:%s", (int)error, message); \
+    }                                                      \
+}
+
 // engine interfaces
 static SLObjectItf engineObject = NULL;
 static SLEngineItf engineEngine;
