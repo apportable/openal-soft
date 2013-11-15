@@ -51,6 +51,9 @@ AL_API ALenum AL_APIENTRY alGetError(void)
     Context = GetContextRef();
     if(!Context)
     {
+#ifdef APPORTABLE
+        return AL_NO_ERROR;
+#else
         if(TrapALError)
         {
 #ifdef _WIN32
@@ -61,6 +64,7 @@ AL_API ALenum AL_APIENTRY alGetError(void)
 #endif
         }
         return AL_INVALID_OPERATION;
+#endif
     }
 
     errorCode = ExchangeInt(&Context->LastError, AL_NO_ERROR);
