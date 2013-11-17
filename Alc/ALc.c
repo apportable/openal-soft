@@ -198,6 +198,7 @@ static const ALCfunction alcFunctions[] = {
     DECL(alDeleteBuffers),
     DECL(alIsBuffer),
     DECL(alBufferData),
+    DECL(alBufferDataStatic),
     DECL(alBufferf),
     DECL(alBuffer3f),
     DECL(alBufferfv),

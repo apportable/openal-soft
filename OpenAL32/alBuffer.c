@@ -284,6 +284,11 @@ AL_API ALboolean AL_APIENTRY alIsBuffer(ALuint buffer)
     return result;
 }
 
+AL_API ALvoid AL_APIENTRY alBufferDataStatic(ALuint buffer, ALenum format, const ALvoid *data, ALsizei size, ALsizei freq)
+{
+    // TODO: implement this properly....
+    return alBufferData(buffer, format, data, size, freq);
+}
 
 AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoid *data, ALsizei size, ALsizei freq)
 {
