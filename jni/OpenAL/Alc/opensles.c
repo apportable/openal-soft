@@ -559,7 +559,7 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &devState->bqPlayerObject, &audioSrc, &audioSnk,
         1, ids, req);
     if ((result != SL_RESULT_SUCCESS) || (devState->bqPlayerObject == NULL)) {
-        RELEASE_LOG("Failed to create OpenSLES player object: %lx", result);
+        RELEASE_LOG("Failed to create OpenSLES player object: %x", (unsigned int)result);
         return ALC_FALSE;
     }
 
@@ -575,7 +575,7 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     result = (*devState->bqPlayerObject)->GetInterface(devState->bqPlayerObject, *pSL_IID_BUFFERQUEUE,
             &devState->bqPlayerBufferQueue);
     if ((result != SL_RESULT_SUCCESS) || (devState->bqPlayerBufferQueue == NULL)) {
-        RELEASE_LOG("Failed to get interface of OpenSLES player queue: %lx", result);
+        RELEASE_LOG("Failed to get interface of OpenSLES player queue: %x", (unsigned int)result);
         return ALC_FALSE;
     }
 
