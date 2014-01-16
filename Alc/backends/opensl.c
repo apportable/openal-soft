@@ -547,7 +547,7 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &devState->bqPlayerObject, &audioSrc, &audioSnk,
         1, ids, req);
     if ((result != SL_RESULT_SUCCESS) || (devState->bqPlayerObject == NULL)) {
-        ERR("Failed to create OpenSLES player object: %lx", result);
+        ERR("Failed to create OpenSLES player object: %x", result);
         return ALC_FALSE;
     }
 
