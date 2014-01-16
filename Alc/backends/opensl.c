@@ -531,7 +531,10 @@ static ALCboolean opensles_reset_playback(ALCdevice *pDevice)
     const SLboolean req[1] = {SL_BOOLEAN_TRUE};
     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &devState->bqPlayerObject, &audioSrc, &audioSnk,
         1, ids, req);
-    assert(SL_RESULT_SUCCESS == result);
+    if ((result != SL_RESULT_SUCCESS) || (devState->bqPlayerObject == NULL)) {
+        ERR("Failed to create OpenSLES player object: %x", result);
+        return ALC_FALSE;
+    }
 
     // realize the player
     result = (*devState->bqPlayerObject)->Realize(devState->bqPlayerObject, SL_BOOLEAN_FALSE);
