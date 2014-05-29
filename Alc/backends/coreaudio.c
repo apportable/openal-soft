@@ -27,7 +27,10 @@
 #include "alMain.h"
 #include "alu.h"
 
+#ifndef APPORTABLE
 #include <CoreServices/CoreServices.h>
+#endif
+
 #include <unistd.h>
 #include <AudioUnit/AudioUnit.h>
 #include <AudioToolbox/AudioToolbox.h>
@@ -136,8 +139,8 @@ static OSStatus ca_capture_callback(void *inRefCon, AudioUnitRenderActionFlags *
 
 static ALCenum ca_open_playback(ALCdevice *device, const ALCchar *deviceName)
 {
-    ComponentDescription desc;
-    Component comp;
+    AudioComponentDescription desc;
+    AudioComponent comp;
     ca_data *data;
     OSStatus err;
 
@@ -148,24 +151,28 @@ static ALCenum ca_open_playback(ALCdevice *device, const ALCchar *deviceName)
 
     /* open the default output unit */
     desc.componentType = kAudioUnitType_Output;
+#ifdef TARGET_OS_IPHONE
+    desc.componentSubType = kAudioUnitSubType_RemoteIO;
+#else
     desc.componentSubType = kAudioUnitSubType_DefaultOutput;
+#endif
     desc.componentManufacturer = kAudioUnitManufacturer_Apple;
     desc.componentFlags = 0;
     desc.componentFlagsMask = 0;
 
-    comp = FindNextComponent(NULL, &desc);
+    comp = AudioComponentFindNext(NULL, &desc);
     if(comp == NULL)
     {
-        ERR("FindNextComponent failed\n");
+        ERR("AudioComponentFindNext failed\n");
         return ALC_INVALID_VALUE;
     }
 
     data = calloc(1, sizeof(*data));
 
-    err = OpenAComponent(comp, &data->audioUnit);
+    err = AudioComponentInstanceNew(comp, &data->audioUnit);
     if(err != noErr)
     {
-        ERR("OpenAComponent failed\n");
+        ERR("AudioComponentInstanceNew failed\n");
         free(data);
         return ALC_INVALID_VALUE;
     }
@@ -175,7 +182,7 @@ static ALCenum ca_open_playback(ALCdevice *device, const ALCchar *deviceName)
     if(err != noErr)
     {
         ERR("AudioUnitInitialize failed\n");
-        CloseComponent(data->audioUnit);
+        AudioComponentInstanceDispose(data->audioUnit);
         free(data);
         return ALC_INVALID_VALUE;
     }
@@ -190,7 +197,7 @@ static void ca_close_playback(ALCdevice *device)
     ca_data *data = (ca_data*)device->ExtraData;
 
     AudioUnitUninitialize(data->audioUnit);
-    CloseComponent(data->audioUnit);
+    AudioComponentInstanceDispose(data->audioUnit);
 
     free(data);
     device->ExtraData = NULL;
@@ -373,26 +380,32 @@ static ALCenum ca_open_capture(ALCdevice *device, const ALCchar *deviceName)
     AudioStreamBasicDescription hardwareFormat;   // The hardware format
     AudioStreamBasicDescription outputFormat;     // The AudioUnit output format
     AURenderCallbackStruct input;
-    ComponentDescription desc;
+    AudioComponentDescription desc;
+#ifndef APPORTABLE
     AudioDeviceID inputDevice;
+#endif
     UInt32 outputFrameCount;
     UInt32 propertySize;
     UInt32 enableIO;
-    Component comp;
+    AudioComponent comp;
     ca_data *data;
     OSStatus err;
 
     desc.componentType = kAudioUnitType_Output;
+#ifdef TARGET_OS_IPHONE
+    desc.componentSubType = kAudioUnitSubType_RemoteIO;
+#else
     desc.componentSubType = kAudioUnitSubType_HALOutput;
+#endif
     desc.componentManufacturer = kAudioUnitManufacturer_Apple;
     desc.componentFlags = 0;
     desc.componentFlagsMask = 0;
 
-    // Search for component with given description
-    comp = FindNextComponent(NULL, &desc);
+    // Search for AudioComponent with given description
+    comp = AudioComponentFindNext(NULL, &desc);
     if(comp == NULL)
     {
-        ERR("FindNextComponent failed\n");
+        ERR("AudioComponentFindNext failed\n");
         return ALC_INVALID_VALUE;
     }
 
@@ -400,10 +413,10 @@ static ALCenum ca_open_capture(ALCdevice *device, const ALCchar *deviceName)
     device->ExtraData = data;
 
     // Open the component
-    err = OpenAComponent(comp, &data->audioUnit);
+    err = AudioComponentInstanceNew(comp, &data->audioUnit);
     if(err != noErr)
     {
-        ERR("OpenAComponent failed\n");
+        ERR("AudioComponentInstanceNew failed\n");
         goto error;
     }
 
@@ -425,6 +438,7 @@ static ALCenum ca_open_capture(ALCdevice *device, const ALCchar *deviceName)
         goto error;
     }
 
+#ifndef APPORTABLE
     // Get the default input device
     propertySize = sizeof(AudioDeviceID);
     err = AudioHardwareGetProperty(kAudioHardwarePropertyDefaultInputDevice, &propertySize, &inputDevice);
@@ -447,6 +461,7 @@ static ALCenum ca_open_capture(ALCdevice *device, const ALCchar *deviceName)
         ERR("AudioUnitSetProperty failed\n");
         goto error;
     }
+#endif
 
     // set capture callback
     input.inputProc = ca_capture_callback;
@@ -587,7 +602,7 @@ error:
     if(data->audioConverter)
         AudioConverterDispose(data->audioConverter);
     if(data->audioUnit)
-        CloseComponent(data->audioUnit);
+        AudioComponentInstanceDispose(data->audioUnit);
 
     free(data);
     device->ExtraData = NULL;
@@ -604,7 +619,7 @@ static void ca_close_capture(ALCdevice *device)
     destroy_buffer_list(data->bufferList);
 
     AudioConverterDispose(data->audioConverter);
-    CloseComponent(data->audioUnit);
+    AudioComponentInstanceDispose(data->audioUnit);
 
     free(data);
     device->ExtraData = NULL;
