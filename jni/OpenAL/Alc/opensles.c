@@ -774,7 +774,7 @@ void alc_opensles_probe(int type)
     }
 
     dlerror(); // Clear dl errors
-    void *dlHandle = dlopen("/system/lib/libOpenSLES.so", RTLD_NOW | RTLD_GLOBAL);
+    void *dlHandle = dlopen("libOpenSLES.so", RTLD_NOW);
     if (!dlHandle || (error = (typeof(error))dlerror()) != NULL) {
         LOGV("OpenSLES could not be loaded.");
         return;
